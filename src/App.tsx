@@ -2,6 +2,7 @@ import { Sidebar } from "@/components/layout/Sidebar";
 import { DashboardPage } from "@/pages/DashboardPage";
 import { PlayersPage } from "@/pages/PlayersPage";
 import { SquadPage } from "@/pages/SquadPage";
+import { YouthPage } from "@/pages/YouthPage";
 import { TransfersPage } from "@/pages/TransfersPage";
 import { ComparePage } from "@/pages/ComparePage";
 import { ShortlistsPage } from "@/pages/ShortlistsPage";
@@ -19,6 +20,7 @@ function App() {
         {currentPage === "dashboard" && <DashboardPage />}
         {currentPage === "players" && <PlayersPage />}
         {currentPage === "squad" && <SquadPage />}
+        {currentPage === "youth" && <YouthPage />}
         {currentPage === "transfers" && <TransfersPage />}
         {currentPage === "compare" && <ComparePage />}
         {currentPage === "shortlists" && <ShortlistsPage />}

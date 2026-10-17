@@ -11,12 +11,14 @@ import {
   Loader2,
   RefreshCw,
   Flag,
+  GraduationCap,
 } from "lucide-react";
 import { useAppStore } from "@/stores/useAppStore";
 
 const navItems = [
   { id: "dashboard" as const, label: "Dashboard", icon: Home },
   { id: "squad" as const, label: "My Squad", icon: Shield },
+  { id: "youth" as const, label: "Youth Squad", icon: GraduationCap },
   { id: "players" as const, label: "Players", icon: Users },
   { id: "transfers" as const, label: "Transfers", icon: ArrowLeftRight },
   { id: "national" as const, label: "National Team", icon: Flag },

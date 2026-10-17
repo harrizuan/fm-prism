@@ -164,6 +164,14 @@ export interface LoadProgress {
   message: string;
 }
 
+export interface YouthTeam {
+  name: string;
+  player_ids: number[];
+  player_count: number;
+  avg_ca: number;
+  avg_age: number;
+}
+
 export function displayName(p: Player): string {
   if (p.common_name) return p.common_name;
   if (p.last_name) return p.first_name ? `${p.first_name} ${p.last_name}` : p.last_name;

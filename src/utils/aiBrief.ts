@@ -53,6 +53,13 @@ export async function generateAIDatabase(
   profile += `\n## League Clubs\n`;
   for (const c of league.slice(0, 25)) profile += `- ${c.clubName}: avgCA ${Math.round(c.avgCA)}, ${c.playerCount} players, best ${c.bestPlayer}(${c.bestPlayerCA})\n`;
 
+  // Youth teams summary (fetched fresh for profile)
+  const yt2 = await invoke("get_youth_teams").catch(() => []) as { name: string; player_count: number; avg_ca: number; avg_age: number }[];
+  if (yt2.length > 0) {
+    profile += `\n## Youth Teams\n`;
+    for (const t of yt2) profile += `- ${t.name}: ${t.player_count} players, avgCA ${Math.round(t.avg_ca)}, avgAge ${t.avg_age.toFixed(1)}\n`;
+  }
+
   await write("profile.md", profile);
 
   // ════════════════════════════════════════════════════════════
@@ -148,6 +155,74 @@ export async function generateAIDatabase(
   }
 
   await write("all-players.tsv", allHeader + "\n" + allRows.join("\n"));
+
+  // ════════════════════════════════════════════════════════════
+  // FILE 4: youth.tsv — youth/reserve squad players with dev stats
+  // ════════════════════════════════════════════════════════════
+  const { invoke: inv2 } = await import("@tauri-apps/api/core");
+  type YT = { name: string; player_ids: number[]; player_count: number; avg_ca: number; avg_age: number };
+  const youthTeams = await inv2<YT[]>("get_youth_teams").catch(() => [] as YT[]);
+
+  // Collect all youth player IDs
+  const youthIds = new Set<number>();
+  for (const t of youthTeams) for (const id of t.player_ids) youthIds.add(id);
+
+  // Fallback: if backend probe found nothing, use club-name matching
+  if (youthIds.size === 0 && mp.club_name) {
+    const clubLower = mp.club_name.toLowerCase();
+    for (const p of players) {
+      if (p.club_name?.toLowerCase() === clubLower && !squadIds.has(p.id)) {
+        youthIds.add(p.id);
+      }
+    }
+  }
+
+  if (youthIds.size > 0) {
+    const youthHeader = [
+      "Name", "Age", "Pos", "CA", "PA", "Gap", "Team",
+      "Slot", "Fit%", "Role1", "R1Score", "Role2", "R2Score",
+      "Ath", "Ment", "Value", "Wage", "Contract", "Rep", "WorldRep",
+      "Cor", "Cro", "Dri", "Fin", "Fir", "FK", "Hea", "LS", "Mar", "Pas", "Pen", "Tac", "Tec",
+      "Agg", "Ant", "Bra", "Cmp", "Cnt", "Dec", "Det", "Fla", "Lea", "OtB", "Pos", "Tea", "Vis", "Wor",
+      "Acc", "Agi", "Bal", "Jum", "NF", "Pac", "Sta", "Str",
+      "Con", "Pre", "Imp", "Pro", "Dir", "Inj", "Tem", "Amb",
+      "DevScore", "Growth",
+    ].join("\t");
+
+    const youthPlayers = players.filter(p => youthIds.has(p.id)).sort((a, b) => b.potential_ability - a.potential_ability);
+    const youthRows = youthPlayers.map(p => {
+      const ff = bestFormationFit(p);
+      const roles = bestRoles(p, 2);
+      const r1 = roles[0], r2 = roles[1];
+      const t = p.technical, m = p.mental, ph = p.physical, h = p.hidden;
+      const gap = p.potential_ability - p.current_ability;
+      const devSc = (h.professionalism ?? 0) * 2 + (m.determination ?? 0);
+      const pro = h.professionalism ?? 10;
+      const det = m.determination ?? 10;
+      const rate = (pro >= 14 ? 12 : pro >= 10 ? 9 : 7) + (det >= 14 ? 3 : det >= 10 ? 1 : 0);
+      const growth = gap > 0 ? `~${rate}CA/yr` : "Peaked";
+
+      const teamName = youthTeams.find(yt => yt.player_ids.includes(p.id))?.name
+        ?? (p.age <= 17 ? "U18/Youth" : "U21/Reserve");
+
+      return [
+        esc(displayName(p)), p.age, p.natural_position, p.current_ability, p.potential_ability, gap, esc(teamName),
+        ff.slot, ff.fit, r1?.role.short ?? "-", r1?.score ?? 0, r2?.role.short ?? "-", r2?.score ?? 0,
+        playerAthletics(p), playerHiddenMentals(p), val(p.value), formatWage(p.wage), p.contract_expiry || "?",
+        p.reputation, p.world_reputation,
+        t.corners, t.crossing, t.dribbling, t.finishing, t.first_touch, t.free_kick, t.heading,
+        t.long_shots, t.marking, t.passing, t.penalty, t.tackling, t.technique,
+        m.aggression, m.anticipation, m.bravery, m.composure, m.concentration, m.decisions,
+        m.determination, m.flair, m.leadership, m.off_the_ball, m.positioning, m.teamwork, m.vision, m.work_rate,
+        ph.acceleration, ph.agility, ph.balance, ph.jumping, ph.natural_fitness, ph.pace, ph.stamina, ph.strength,
+        h.consistency, h.pressure, h.important_matches, h.professionalism, h.dirtiness,
+        h.injury_proneness, h.temperament, h.ambition,
+        devSc, growth,
+      ].join("\t");
+    });
+
+    await write("youth.tsv", youthHeader + "\n" + youthRows.join("\n"));
+  }
 
   const totalKB = Math.round((profile.length + squadRows.join("\n").length + allRows.join("\n").length) / 1024);
   console.log(`[AI DB] Written ${totalKB} KB across 3 files (${players.length} players)`);

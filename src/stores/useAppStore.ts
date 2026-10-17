@@ -1,10 +1,10 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import type { Player, GameInfo, LoadProgress, ManagerProfile } from "@/types/player";
+import type { Player, GameInfo, LoadProgress, ManagerProfile, YouthTeam } from "@/types/player";
 import { generateAIDatabase } from "@/utils/aiBrief";
 
-type Page = "dashboard" | "players" | "squad" | "transfers" | "compare" | "shortlists" | "national" | "settings";
+type Page = "dashboard" | "players" | "squad" | "transfers" | "compare" | "shortlists" | "national" | "youth" | "settings";
 
 interface AppStore {
   connected: boolean;
@@ -20,6 +20,7 @@ interface AppStore {
   shortlist: Player[];
   managerProfile: ManagerProfile | null;
   squadIds: Set<number>;
+  youthTeams: YouthTeam[];
 
   // Filters
   minCA: number | null;
@@ -84,12 +85,14 @@ async function doLoad(set: (s: Partial<AppStore>) => void, get: () => AppStore) 
     const players = await invoke<Player[]>("get_players");
     const profile = await invoke<ManagerProfile | null>("get_manager_profile");
     const squadIdArr = await invoke<number[]>("get_squad_ids");
+    const youthTeams = await invoke<YouthTeam[]>("get_youth_teams").catch(() => [] as YouthTeam[]);
     set({
       players,
       loading: false,
       loadProgress: null,
       managerProfile: profile,
       squadIds: new Set(squadIdArr),
+      youthTeams,
     });
 
     // Hydrate shortlist against fresh player data — fixes stale
@@ -142,6 +145,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   })(),
   managerProfile: null,
   squadIds: new Set(),
+  youthTeams: [],
   minCA: null,
   maxCA: null,
   minPA: null,
@@ -174,7 +178,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     await invoke("disconnect_fm");
     set({
       connected: false, gameInfo: null, players: [], selectedPlayer: null,
-      managerProfile: null, squadIds: new Set(),
+      managerProfile: null, squadIds: new Set(), youthTeams: [],
     });
   },
 

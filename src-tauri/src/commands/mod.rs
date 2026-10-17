@@ -1,3 +1,5 @@
+use serde::{Deserialize, Serialize};
+
 use crate::memory;
 use crate::models::*;
 use crate::parser;
@@ -10,9 +12,19 @@ pub struct AppState {
     pub process: Mutex<Option<memory::ProcessHandle>>,
     pub players: Mutex<Vec<Player>>,
     pub squad_ids: Mutex<HashSet<u32>>,
+    pub youth_teams: Mutex<Vec<YouthTeam>>,
     pub manager_profile: Mutex<Option<ManagerProfile>>,
     pub game_info: Mutex<Option<GameInfo>>,
     pub game_year: Mutex<u16>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct YouthTeam {
+    pub name: String,
+    pub player_ids: Vec<u32>,
+    pub player_count: usize,
+    pub avg_ca: f32,
+    pub avg_age: f32,
 }
 
 impl Default for AppState {
@@ -21,6 +33,7 @@ impl Default for AppState {
             process: Mutex::new(None),
             players: Mutex::new(Vec::new()),
             squad_ids: Mutex::new(HashSet::new()),
+            youth_teams: Mutex::new(Vec::new()),
             manager_profile: Mutex::new(None),
             game_info: Mutex::new(None),
             game_year: Mutex::new(2025),
@@ -261,6 +274,99 @@ fn find_all_managed_teams(
     }
 }
 
+/// Probe the club struct for youth/reserve team pointers.
+/// Returns a list of (team_name, player_ptrs) for each non-first-team found.
+fn probe_youth_teams(
+    handle: HANDLE,
+    club_ptr: usize,
+    first_team_ptr: usize,
+    game_year: u16,
+) -> Vec<(String, Vec<usize>)> {
+    let mut result: Vec<(String, Vec<usize>)> = Vec::new();
+    if club_ptr < 0x10000 { return result; }
+
+    // Probe club struct for team-like pointers (objects with valid player vectors)
+    // FM club structs typically have team ptrs within the first 512 bytes
+    let mut found_ptrs: Vec<usize> = Vec::new();
+
+    for offset in (0x00..0x200usize).step_by(8) {
+        let ptr = match memory::read_ptr(handle, club_ptr + offset) {
+            Ok(p) if p > 0x10000 && p < 0x800_0000_0000 => p,
+            _ => continue,
+        };
+        if ptr == first_team_ptr { continue; }
+        if found_ptrs.contains(&ptr) { continue; }
+
+        // Check if this looks like a team object (has player vector at standard offsets)
+        let ps = memory::read_ptr(handle, ptr + parser::TEAM_PLAYERS_START_OFFSET).unwrap_or(0);
+        let pe = memory::read_ptr(handle, ptr + parser::TEAM_PLAYERS_END_OFFSET).unwrap_or(0);
+        if ps < 0x10000 || pe <= ps { continue; }
+        let count = (pe - ps) / 8;
+        if count == 0 || count > 150 { continue; }
+
+        // Verify: the team's club pointer should point back to our club
+        let team_club = memory::read_ptr(handle, ptr + parser::TEAM_CLUB_OFFSET).unwrap_or(0);
+        if team_club != club_ptr { continue; }
+
+        // This is a sub-team of our club! Read its competition name for classification.
+        let mut team_name = String::new();
+        for comp_off in [parser::TEAM_COMP_OFFSET, parser::TEAM_COMP_ALT_OFFSET] {
+            if let Ok(comp_ptr) = memory::read_ptr(handle, ptr + comp_off) {
+                if comp_ptr > 0x10000 {
+                    let name = memory::read_fm_string(handle, comp_ptr + parser::COMP_NAME_OFFSET);
+                    if !name.is_empty() && name.len() >= 3 { team_name = name; break; }
+                    let short = memory::read_fm_string(handle, comp_ptr + parser::COMP_SHORT_NAME_OFFSET);
+                    if !short.is_empty() && short.len() >= 3 { team_name = short; break; }
+                }
+            }
+        }
+
+        // Read player pointers
+        let mut player_ptrs = Vec::new();
+        for j in 0..count {
+            if let Ok(pp) = memory::read_ptr(handle, ps + j * 8) {
+                if pp > 0x10000 { player_ptrs.push(pp); }
+            }
+        }
+
+        if player_ptrs.is_empty() { continue; }
+
+        // Classify the team
+        let name_lower = team_name.to_lowercase();
+        let label = if name_lower.contains("u18") || name_lower.contains("u-18") || name_lower.contains("youth") || name_lower.contains("academy") || name_lower.contains("juvenil") {
+            if team_name.is_empty() { "U18 / Youth".to_string() } else { team_name.clone() }
+        } else if name_lower.contains("u21") || name_lower.contains("u-21") || name_lower.contains("u23") || name_lower.contains("u-23")
+            || name_lower.contains("reserve") || name_lower.contains("development") || name_lower.contains("primavera") || name_lower.contains("jong") || name_lower.contains("b team") {
+            if team_name.is_empty() { "U21 / Reserve".to_string() } else { team_name.clone() }
+        } else if name_lower.contains("u19") || name_lower.contains("u-19") {
+            if team_name.is_empty() { "U19".to_string() } else { team_name.clone() }
+        } else if team_name.is_empty() {
+            // Classify by average age of first few players
+            let mut total_age = 0u32;
+            let mut age_count = 0u32;
+            for &pp in player_ptrs.iter().take(10) {
+                if let Some(p) = parser::parse_player_at(handle, pp, game_year) {
+                    total_age += p.age as u32;
+                    age_count += 1;
+                }
+            }
+            let avg = if age_count > 0 { total_age / age_count } else { 20 };
+            if avg <= 18 { "U18 / Youth".to_string() }
+            else { "U21 / Reserve".to_string() }
+        } else {
+            team_name.clone()
+        };
+
+        log::info!("Youth team found: {} — {} players (club+0x{:X})", label, player_ptrs.len(), offset);
+        found_ptrs.push(ptr);
+        result.push((label, player_ptrs));
+
+        if result.len() >= 4 { break; }
+    }
+
+    result
+}
+
 /// Scan private memory for all player objects that share the same vtable as known players.
 fn scan_wider_database(
     handle: HANDLE,
@@ -464,6 +570,64 @@ pub fn scan_for_players(app: AppHandle, state: State<'_, AppState>) -> Result<us
                                 }
                             }
                             log::info!("Wider scan: parsed {} additional players from {} candidates", parsed, wider_total);
+                        }
+
+                        // Phase 3: Probe club struct for youth/reserve teams
+                        let club_ptr = memory::read_ptr(handle, club_team.team_ptr + parser::TEAM_CLUB_OFFSET).unwrap_or(0);
+                        if club_ptr > 0x10000 {
+                            let youth_raw = probe_youth_teams(handle, club_ptr, club_team.team_ptr, game_year);
+                            let all_loaded: std::collections::HashMap<u32, &Player> = all_players.iter().map(|p| (p.id, p)).collect();
+                            let mut youth_teams_out: Vec<YouthTeam> = Vec::new();
+
+                            for (team_name, ptrs) in &youth_raw {
+                                let mut ids = Vec::new();
+                                let mut total_ca = 0f32;
+                                let mut total_age = 0f32;
+                                for &pp in ptrs {
+                                    if let Some(p) = parser::parse_player_at(handle, pp, game_year) {
+                                        ids.push(p.id);
+                                        total_ca += p.current_ability as f32;
+                                        total_age += p.age as f32;
+                                    }
+                                }
+                                let n = ids.len();
+                                if n == 0 { continue; }
+                                youth_teams_out.push(YouthTeam {
+                                    name: team_name.clone(),
+                                    player_count: n,
+                                    player_ids: ids,
+                                    avg_ca: total_ca / n as f32,
+                                    avg_age: total_age / n as f32,
+                                });
+                                log::info!("Youth team '{}': {} players, avg CA {:.0}, avg age {:.1}",
+                                    team_name, n, total_ca / n as f32, total_age / n as f32);
+                            }
+
+                            // If probe found nothing, fallback: any same-club player not in first-team
+                            if youth_teams_out.is_empty() {
+                                let squad_ids_ref = state.squad_ids.lock().unwrap();
+                                let club_lower = club_name.to_lowercase();
+                                let mut u21_ids = Vec::new();
+                                let mut u18_ids = Vec::new();
+                                for p in all_players.iter() {
+                                    if p.club_name.to_lowercase() == club_lower && !squad_ids_ref.contains(&p.id) {
+                                        if p.age <= 17 { u18_ids.push(p.id); }
+                                        else { u21_ids.push(p.id); }
+                                    }
+                                }
+                                if !u21_ids.is_empty() {
+                                    let avg_ca = u21_ids.iter().filter_map(|id| all_loaded.get(id)).map(|p| p.current_ability as f32).sum::<f32>() / u21_ids.len() as f32;
+                                    let avg_age = u21_ids.iter().filter_map(|id| all_loaded.get(id)).map(|p| p.age as f32).sum::<f32>() / u21_ids.len() as f32;
+                                    youth_teams_out.push(YouthTeam { name: "U21 / Reserve".into(), player_count: u21_ids.len(), player_ids: u21_ids, avg_ca, avg_age });
+                                }
+                                if !u18_ids.is_empty() {
+                                    let avg_ca = u18_ids.iter().filter_map(|id| all_loaded.get(id)).map(|p| p.current_ability as f32).sum::<f32>() / u18_ids.len() as f32;
+                                    let avg_age = u18_ids.iter().filter_map(|id| all_loaded.get(id)).map(|p| p.age as f32).sum::<f32>() / u18_ids.len() as f32;
+                                    youth_teams_out.push(YouthTeam { name: "U18 / Youth".into(), player_count: u18_ids.len(), player_ids: u18_ids, avg_ca, avg_age });
+                                }
+                            }
+
+                            *state.youth_teams.lock().unwrap() = youth_teams_out;
                         }
                     }
                     Err(e) => {
@@ -885,4 +1049,9 @@ pub async fn get_listed_players(state: State<'_, AppState>) -> Result<Vec<Player
 pub async fn get_free_agents(state: State<'_, AppState>) -> Result<Vec<Player>, String> {
     let players = state.players.lock().unwrap();
     Ok(players.iter().filter(|p| p.club_name.is_empty() || p.club_name == "Free Agent").cloned().collect())
+}
+
+#[tauri::command]
+pub async fn get_youth_teams(state: State<'_, AppState>) -> Result<Vec<YouthTeam>, String> {
+    Ok(state.youth_teams.lock().unwrap().clone())
 }

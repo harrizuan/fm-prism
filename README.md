@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/FM_Prism-v0.4.5-00ff88?style=for-the-badge&labelColor=18181b" />
+  <img src="https://img.shields.io/badge/FM_Prism-v0.4.6-00ff88?style=for-the-badge&labelColor=18181b" />
   <img src="https://img.shields.io/badge/FM26-Windows-0ea5e9?style=for-the-badge&labelColor=18181b" />
   <img src="https://img.shields.io/badge/Tauri_2-Rust_+_React-f97316?style=for-the-badge&labelColor=18181b" />
   <img src="https://img.shields.io/badge/License-MIT-a855f7?style=for-the-badge&labelColor=18181b" />
@@ -269,6 +269,18 @@ This project would not exist without the work of these people and communities:
 ---
 
 ## Changelog
+
+### v0.4.6 — Youth Squad page + team detection (Oct 2026)
+
+- **NEW**: Dedicated **Youth Squad** page with full analysis — star prospects, first-team ready, development gems
+- **NEW**: Backend probes the club struct for youth/reserve team pointers — auto-detects U21/U23/U18/U19 teams by reading competition names. Falls back to age-based grouping if probe fails.
+- **NEW**: Youth players get full scoring: role ratings, formation fit, dev stats (Pro, Det, Amb, Imp, Tem)
+- **NEW**: DevScore column (Pro×2 + Det) — quantifies development potential; ≥35 = elite, 28-34 = good
+- **NEW**: Growth projection column — estimates CA/year rate and years to PA based on Pro/Det
+- **NEW**: AI Brief now exports `youth.tsv` with dev scores, team labels, and growth projections
+- **NEW**: `profile.md` now includes Youth Teams section with team names, sizes, avg CA/age
+- **NEW**: Backend command `get_youth_teams` returns typed team data (name, player_ids, avg_ca, avg_age)
+- **NEW**: `GraduationCap` nav icon for Youth Squad in sidebar (between My Squad and Players)
 
 ### v0.4.5 — Feasibility engine v2: uses actual club reputation + league tier awareness (Oct 2026)
 
