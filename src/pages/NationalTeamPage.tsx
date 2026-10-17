@@ -100,7 +100,8 @@ function slotScore(p: Player, slot: Slot): number {
   // Natural 18-20, Accomplished 15-17, Competent 12-14, Unconvincing 9-11, Awkward 5-8
   // Multipliers from FM-Arena testing: Nat≈100%, Acc≈90%, Comp≈75%, Unc≈60%, Awk≈40%
   const posFit = nat >= 18 ? 1.0 : nat >= 15 ? 0.90 : nat >= 12 ? 0.75 : nat >= 9 ? 0.60 : nat >= 5 ? 0.40 : 0.20;
-  return ((ip + oop) / 2) * posFit;
+  // 60% IP + 40% OOP — consistent with SquadPage and bestFormationFit in player.ts
+  return (ip * 0.6 + oop * 0.4) * posFit;
 }
 
 // National team composite: CA-weighted because national teams pick their best

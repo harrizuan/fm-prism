@@ -61,7 +61,7 @@ export interface MentalAttributes {
   bravery: number;
   composure: number;
   concentration: number;
-  creativity: number;
+  creativity: number;  // LEGACY: FM26 renamed Creativity→Vision. This field contains flair data (same raw byte). Use vision for playmaker scoring.
   decisions: number;
   determination: number;
   flair: number;
@@ -293,7 +293,7 @@ const ROLES: RoleDefinition[] = [
   // sortitoutsi FM26 IF: Key=Dri,FiT,Tec,Ant,Cmp,OtB,Acc,Agi  Pref=Cro,Fin,Lon,Pas,Fla,Vis,WR,Bal,Pac,Sta
   { name: "Inside Forward", short: "IF", positions: ["AML", "AMR"],
     keyAttrs: ["dribbling", "first_touch", "technique", "anticipation", "composure", "off_the_ball", "acceleration", "agility"],
-    greenAttrs: ["crossing", "finishing", "long_shots", "passing", "flair", "vision", "pace", "balance"] },
+    greenAttrs: ["crossing", "finishing", "long_shots", "passing", "flair", "vision", "work_rate", "balance", "pace", "stamina"] },
   // sortitoutsi FM26 Wide Forward: Key=Dri,FiT,Tec,Ant,OtB,Acc,Agi,Pac  Pref=Cro,Fin,Pas,Cmp,Fla,WR,Bal,Sta
   { name: "Wide Forward", short: "WF", positions: ["AML", "AMR"],
     keyAttrs: ["dribbling", "first_touch", "technique", "anticipation", "off_the_ball", "acceleration", "agility", "pace"],
@@ -307,7 +307,7 @@ const ROLES: RoleDefinition[] = [
   // sortitoutsi FM26 Inside Winger: Key=Dri,FiT,Tec,Cmp,TW,Acc,Agi  Pref=Cro,Lon,Pas,Ant,Fla,OtB,Vis,WR,Bal,Pac,Sta
   { name: "Inside Winger", short: "IW", positions: ["AML", "AMR", "ML", "MR"],
     keyAttrs: ["dribbling", "first_touch", "technique", "composure", "teamwork", "acceleration", "agility"],
-    greenAttrs: ["crossing", "long_shots", "passing", "anticipation", "flair", "off_the_ball", "vision", "work_rate", "balance", "pace"] },
+    greenAttrs: ["crossing", "long_shots", "passing", "anticipation", "flair", "off_the_ball", "vision", "work_rate", "balance", "pace", "stamina"] },
   // sortitoutsi FM26 Wide Midfielder: Key=Cro,Pas,Tec,TW,WR,Pac,Sta  Pref=Dri,FiT,Ant,Cmp,OtB,Vis,Acc,Agi
   { name: "Wide Midfielder", short: "WM", positions: ["ML", "MR"],
     keyAttrs: ["crossing", "passing", "technique", "teamwork", "work_rate", "pace", "stamina"],
@@ -316,7 +316,7 @@ const ROLES: RoleDefinition[] = [
   // sortitoutsi FM26 BBM (DM section): Key=Pas,Tck,OtB,TW,WR,Sta  Pref=Dri,Fin,FiT,Lon,Tec,Agg,Ant,Cmp,Dec,Pos,Acc,Bal,Pac,Str
   { name: "Box-to-Box Midfielder", short: "BBM", positions: ["MC"],
     keyAttrs: ["passing", "tackling", "off_the_ball", "teamwork", "work_rate", "stamina"],
-    greenAttrs: ["dribbling", "first_touch", "technique", "anticipation", "composure", "decisions", "positioning", "acceleration", "strength"] },
+    greenAttrs: ["dribbling", "finishing", "first_touch", "long_shots", "technique", "aggression", "anticipation", "composure", "decisions", "positioning", "acceleration", "balance", "pace", "strength"] },
   // sortitoutsi FM26 DLP: Key=FiT,Pas,Tec,Cmp,Dec,OtB,TW,Vis  Pref=Mrk,Tck,Ant,Con,Pos,WR,Bal,Sta
   { name: "Deep-Lying Playmaker", short: "DLP", positions: ["MC", "DM"],
     keyAttrs: ["first_touch", "passing", "technique", "composure", "decisions", "off_the_ball", "teamwork", "vision"],
@@ -346,7 +346,7 @@ const ROLES: RoleDefinition[] = [
   // sortitoutsi FM26 WB: Key=Cro,Mrk,Tck,TW,WR,Acc,Pac,Sta  Pref=Dri,FiT,Pas,Tec,Ant,Con,Dec,OtB,Pos,Agi,Bal
   { name: "Wing-Back", short: "WB", positions: ["WBL", "WBR"],
     keyAttrs: ["crossing", "marking", "tackling", "teamwork", "work_rate", "acceleration", "pace", "stamina"],
-    greenAttrs: ["dribbling", "first_touch", "passing", "technique", "anticipation", "decisions", "off_the_ball", "positioning", "agility"] },
+    greenAttrs: ["dribbling", "first_touch", "passing", "technique", "anticipation", "concentration", "decisions", "off_the_ball", "positioning", "agility", "balance"] },
   // sortitoutsi FM26 FB: Key=Mrk,Tck,Ant,Con,Pos,TW,Acc  Pref=Cro,Dri,Pas,Tec,Dec,WR,Agi,Pac,Sta
   { name: "Full-Back", short: "FB", positions: ["DL", "DR"],
     keyAttrs: ["marking", "tackling", "anticipation", "concentration", "positioning", "teamwork", "acceleration"],
