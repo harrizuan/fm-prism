@@ -1,6 +1,6 @@
 # FM Scout Pro — Test Plan & Feature Audit
 
-> Generated: 2026-10-18 | Version: 0.4.3 — Deep audit release  
+> Generated: 2026-10-18 | Version: 0.4.4 — Feasibility engine overhaul  
 > Audit every feature one-by-one after each build.
 
 ---
@@ -28,6 +28,8 @@
 | B13 | NationalTeamPage 50/50 IP/OOP weighting | slotScore() used (ip+oop)/2, SquadPage uses ip*0.6+oop*0.4 | Fixed to ip*0.6+oop*0.4 — consistent everywhere | v0.4.3 |
 | B14 | creativity field misleading | FM26 renamed Creativity→Vision; parser maps both creativity and flair to raw[26] | Added documentation warning | v0.4.3 |
 | B15 | Transfer position dropdown all "0 in squad" | squadPosStrength counted by bestFormationFit slot label (DCL/DCR/DML/DMR) which never matched dropdown keys (DC/DM). MC/ML/MR/WBL/WBR not in BEST_LLM_SLOTS at all. | Count by actual position familiarity ≥15 (Accomplished+) | v0.4.3 |
+| B16 | Feasibility rep gap used raw squad avg world rep | clubAvgWorldRep (~2500) ≈ player WorldRep for mid-tier players, so gap appeared ~0 even when FM refuses. Club rep is much lower than player avg rep for lower-league clubs. | Use estimated club rep (65% of avg player world rep) | v0.4.4 |
+| B17 | Ambition penalty too weak (-8) | FM gives absolute refusal ("under any circumstances") when ambition ≥16 and rep gap >1000, but engine only penalised -8 | -25 for amb≥16 + gap>1000; -15 for amb≥12 + gap>1500; -12 for amb≥16 + gap>500 | v0.4.4 |
 
 ## Bugs Fixed in v0.3.0
 

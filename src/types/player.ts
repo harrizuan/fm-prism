@@ -500,9 +500,16 @@ export function calculateFeasibility(
   // 1. REPUTATION GAP (35-point swing) — Research: biggest factor
   // Reputation scale: 0-10,000 (0-2750 local, 2750-4000 regional,
   // 4000-6000 national, 6000-8000 continental, 8000-10000 world class)
+  // NOTE: clubAvgWorldRep is passed in, but it's the average player
+  // world rep — NOT the club's own reputation. FM uses club rep for
+  // signing willingness. Since club_rep isn't available here, we use
+  // the lower of clubAvgWorldRep and clubAvgWorldRep * 0.65 as a proxy
+  // (lower-league clubs always have club rep below their player avg rep).
   // ═══════════════════════════════════════════════════════════
   const playerRep = Math.max(player.world_reputation, player.current_reputation);
-  const repGap = playerRep - clubAvgWorldRep;
+  // Proxy: club reputation is typically 60-70% of average player world rep for lower-league clubs
+  const estimatedClubRep = clubAvgWorldRep * 0.65;
+  const repGap = playerRep - estimatedClubRep;
 
   if (repGap <= -2000) {
     score += 25;
@@ -626,9 +633,15 @@ export function calculateFeasibility(
   const amb = player.hidden.ambition;
   const loy = player.hidden.loyalty;
 
-  if (amb >= 16 && repGap > 500) {
-    score -= 8;
+  if (amb >= 16 && repGap > 1000) {
+    score -= 25;
+    reasons.push("Very ambitious + large rep gap — will refuse (FM: 'under any circumstances')");
+  } else if (amb >= 16 && repGap > 500) {
+    score -= 12;
     reasons.push("High ambition + we're below him — wants bigger clubs");
+  } else if (amb >= 12 && repGap > 1500) {
+    score -= 15;
+    reasons.push("Ambitious + significant rep gap — very unlikely to accept");
   } else if (amb >= 16 && repGap <= 0) {
     score += 4;
     reasons.push("High ambition — motivated by our level/project");

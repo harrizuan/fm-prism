@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/FM_Prism-v0.4.3-00ff88?style=for-the-badge&labelColor=18181b" />
+  <img src="https://img.shields.io/badge/FM_Prism-v0.4.4-00ff88?style=for-the-badge&labelColor=18181b" />
   <img src="https://img.shields.io/badge/FM26-Windows-0ea5e9?style=for-the-badge&labelColor=18181b" />
   <img src="https://img.shields.io/badge/Tauri_2-Rust_+_React-f97316?style=for-the-badge&labelColor=18181b" />
   <img src="https://img.shields.io/badge/License-MIT-a855f7?style=for-the-badge&labelColor=18181b" />
@@ -269,6 +269,13 @@ This project would not exist without the work of these people and communities:
 ---
 
 ## Changelog
+
+### v0.4.4 — Feasibility engine overhaul (Oct 2026)
+
+- **FIX**: Feasibility rep gap now uses estimated club reputation (65% of average player world rep) instead of raw squad avg. Previously Cacciamani (WorldRep 2491) appeared as "Similar level" to Notts Co despite FM refusing the transfer. Now correctly shows ~900 rep gap.
+- **FIX**: Ambition penalty massively strengthened — Very ambitious players (≥16) with rep gap >1000 now get -25 penalty (was only -8). Mid-ambition (≥12) with rep gap >1500 gets -15. FM gives absolute "wouldn't sign under any circumstances" for these cases.
+- **FIX**: Transfer page player click opens inline sidebar (same as Players page) instead of navigating away
+- **FIX**: Position dropdown counts now use actual position familiarity ≥15 instead of formation slot matching
 
 ### v0.4.3 — Deep audit: 6 scoring bugs fixed (Oct 2026)
 
