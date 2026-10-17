@@ -208,14 +208,19 @@ export function formatWage(val: number): string {
 // ROLE RATINGS ENGINE
 // ========================
 // FM calculates role score = Σ(attr × weight) / Σ(weights) on a 1-20 scale.
-// Exact per-role weights are NOT published — only key (green) and preferable (blue)
-// classifications are visible. From CAE's research (FM Scout):
+// From CAE's research (FM Scout, Feb 2022):
 //   Total Weight = Position Weight + Role Weight × 5
 //   Green key role_weight = 2 (adds +10), Blue preferable = 1 (adds +5)
 // Our approximation: key attrs weighted 0.70, green attrs 0.30 of total score.
 // This gives an effective ratio of ~2.33:1 — close to FM's ~2:1 observed ratio.
+//
+// Key vs Preferable classifications sourced from:
+//   sortitoutsi.net/content/75078 (FM26 complete role guide, Nov 2025)
+//   fmdossier.dev/guides/key-vs-preferable-attributes (FM26 analysis)
+//   fm26tactics.com role guides (FM26 attribute highlights)
+//
 // Hidden attrs are NOT part of FM's role score but we add a small bonus
-// to reflect their researched match-engine impact (FM-Arena: "free CA").
+// to reflect their researched match-engine impact (FM-Arena FM26: "free CA").
 
 export interface RoleDefinition {
   name: string;
@@ -225,82 +230,111 @@ export interface RoleDefinition {
   positions: string[];
 }
 
-// ROLES: FM26's 19 tactical roles
-// CRITICAL: FM26 renamed "Creativity" → "Vision". Our Rust parser maps raw[26] to BOTH
-// flair and creativity (same offset!). All playmaker roles must use "vision" (raw[10]),
+// ROLES: 20 tactical roles — 15 verified from FM26 in-game data, 5 legacy approximations.
+// Primary source: sortitoutsi FM26 complete role guide (edgardavids8, Nov 2025)
+//   https://sortitoutsi.net/content/75078/fm26-important-attributes-for-every-role
+// Cross-referenced with FM Dossier (fmdossier.dev/guides/key-vs-preferable-attributes),
+// fm26tactics.com, and CAE's role ability calculator on FM Scout.
+//
+// key (green in-game) = higher weight in role score. preferable (blue) = lower weight.
+// CAE formula: Total Weight = Position Weight + Role Weight × 5 (green=2, blue=1).
+// Our approximation: key 70%, green 30%. Effective ratio ~2.33:1.
+//
+// CRITICAL: FM26 renamed "Creativity" → "Vision". All playmaker roles use "vision",
 // NOT "creativity" which would double-count flair.
 const ROLES: RoleDefinition[] = [
+  // ─── STRIKERS ───
+  // "Advanced Forward" has no exact FM26 match; approximated from Channel Forward data.
   { name: "Advanced Forward", short: "AF", positions: ["ST"],
     keyAttrs: ["finishing", "off_the_ball", "composure", "first_touch", "technique", "acceleration", "pace"],
-    greenAttrs: ["dribbling", "decisions", "anticipation"] },
-  // FM Scout/CAE confirmed exact weights: Fin:8, FT:6, Hea:6, Tec:4, Ant:5, Cmp:6,
-  // Dec:5, OtB:6, Acc:10. Most CA-efficient striker role (total weight 12.875).
+    greenAttrs: ["dribbling", "anticipation", "decisions", "agility"] },
+  // sortitoutsi FM26 Poacher: Key=Fin,Hea,Ant,Cmp,Con,OtB,Acc  Pref=FiT,Tec,Dec,Bal
   { name: "Poacher", short: "P", positions: ["ST"],
-    keyAttrs: ["finishing", "composure", "off_the_ball", "anticipation", "acceleration"],
-    greenAttrs: ["first_touch", "heading", "technique", "decisions"] },
-  // FM26 confirmed (FM Dossier): key (green) = Jumping Reach, Strength, Heading,
-  // Bravery, Aggression, Finishing, First Touch. Balance is blue (preferable).
+    keyAttrs: ["finishing", "heading", "anticipation", "composure", "concentration", "off_the_ball", "acceleration"],
+    greenAttrs: ["first_touch", "technique", "decisions", "balance"] },
+  // sortitoutsi FM26 Target Forward: Key=Fin,Hea,Agg,Bra,Cmp,OtB,Bal,Jum,Str  Pref=FiT,Ant,Dec,TW
   { name: "Target Man", short: "TM", positions: ["ST"],
-    keyAttrs: ["heading", "strength", "jumping", "first_touch", "finishing", "bravery", "aggression"],
-    greenAttrs: ["balance", "off_the_ball", "passing", "teamwork", "anticipation"] },
+    keyAttrs: ["finishing", "heading", "aggression", "bravery", "composure", "off_the_ball", "balance", "jumping", "strength"],
+    greenAttrs: ["first_touch", "anticipation", "decisions", "teamwork"] },
+  // sortitoutsi FM26 DLF: Key=Fin,FiT,Tec,Cmp,OtB,Str  Pref=Dri,Pas,Ant,Dec,TW,Vis,Bal
   { name: "Deep-Lying Forward", short: "DLF", positions: ["ST"],
-    keyAttrs: ["first_touch", "passing", "technique", "vision", "decisions", "off_the_ball", "teamwork"],
-    greenAttrs: ["composure", "anticipation", "finishing"] },
+    keyAttrs: ["finishing", "first_touch", "technique", "composure", "off_the_ball", "strength"],
+    greenAttrs: ["dribbling", "passing", "anticipation", "decisions", "teamwork", "vision", "balance"] },
+  // "Pressing Forward" has no exact FM26 IP match; based on pressing research + Tracking CF OOP.
   { name: "Pressing Forward", short: "PF", positions: ["ST"],
-    keyAttrs: ["aggression", "bravery", "work_rate", "stamina", "off_the_ball", "finishing", "acceleration", "pace"],
-    greenAttrs: ["anticipation", "teamwork", "determination"] },
+    keyAttrs: ["work_rate", "stamina", "aggression", "bravery", "off_the_ball", "finishing", "acceleration", "pace"],
+    greenAttrs: ["anticipation", "teamwork", "determination", "strength"] },
+  // sortitoutsi FM26 Centre Forward: Key=Fin,FiT,Hea,Tec,Cmp,OtB,Acc,Str  Pref=Dri,Pas,Ant,Dec,Agi,Bal,Jum,Pac
   { name: "Complete Forward", short: "CF", positions: ["ST"],
-    keyAttrs: ["finishing", "heading", "first_touch", "technique", "passing", "off_the_ball", "composure", "dribbling", "strength", "pace"],
-    greenAttrs: ["anticipation", "decisions", "vision", "acceleration"] },
+    keyAttrs: ["finishing", "first_touch", "heading", "technique", "composure", "off_the_ball", "acceleration", "strength"],
+    greenAttrs: ["dribbling", "passing", "anticipation", "decisions", "agility", "balance", "jumping", "pace"] },
+  // ─── ATTACKING MIDFIELD ───
+  // sortitoutsi FM26 AM: Key=FiT,Lon,Pas,Tec,Cmp,Fla,OtB  Pref=Cro,Dri,Fin,Ant,Dec,Vis,Acc,Agi
   { name: "Attacking Midfielder", short: "AM", positions: ["AMC"],
-    keyAttrs: ["vision", "decisions", "passing", "technique", "first_touch", "off_the_ball", "flair"],
-    greenAttrs: ["dribbling", "composure", "anticipation", "acceleration"] },
+    keyAttrs: ["first_touch", "long_shots", "passing", "technique", "composure", "flair", "off_the_ball"],
+    greenAttrs: ["crossing", "dribbling", "finishing", "anticipation", "decisions", "vision", "acceleration", "agility"] },
+  // "Trequartista" has no exact FM26 match; legacy creative free-roamer approximation.
   { name: "Trequartista", short: "TQ", positions: ["AMC"],
     keyAttrs: ["vision", "flair", "technique", "dribbling", "first_touch", "passing", "off_the_ball", "composure"],
-    greenAttrs: ["decisions", "acceleration", "agility", "finishing"] },
+    greenAttrs: ["decisions", "acceleration", "agility", "finishing", "anticipation"] },
+  // ─── WIDE ATTACKING ───
+  // sortitoutsi FM26 IF: Key=Dri,FiT,Tec,Ant,Cmp,OtB,Acc,Agi  Pref=Cro,Fin,Lon,Pas,Fla,Vis,WR,Bal,Pac,Sta
   { name: "Inside Forward", short: "IF", positions: ["AML", "AMR"],
-    keyAttrs: ["finishing", "dribbling", "acceleration", "pace", "off_the_ball", "technique", "composure", "first_touch"],
-    greenAttrs: ["flair", "passing", "vision", "agility"] },
-  // FM26 confirmed (FM Dossier): key (green) = Acceleration, Dribbling, Agility.
-  // Crossing/Finishing depend on duty (Attack delivers, Support cuts inside).
-  // Pace critical per FM-Arena (highest positional weight for AMLR).
-  // Technique, Flair are blue (preferable). Off The Ball for positioning.
+    keyAttrs: ["dribbling", "first_touch", "technique", "anticipation", "composure", "off_the_ball", "acceleration", "agility"],
+    greenAttrs: ["crossing", "finishing", "long_shots", "passing", "flair", "vision", "pace", "balance"] },
+  // sortitoutsi FM26 Winger: Key=Cro,Dri,Tec,TW,Acc,Agi,Pac  Pref=FiT,Pas,Ant,Fla,OtB,WR,Bal,Sta
+  // NOTE: sortitoutsi AND fm26tactics.com both confirm Technique is KEY (green).
+  // FM Dossier previously called it blue — that was incorrect for the base Winger role.
   { name: "Winger", short: "W", positions: ["AML", "AMR", "ML", "MR"],
-    keyAttrs: ["crossing", "dribbling", "pace", "acceleration", "off_the_ball", "agility"],
-    greenAttrs: ["flair", "first_touch", "technique", "passing", "vision"] },
+    keyAttrs: ["crossing", "dribbling", "technique", "teamwork", "acceleration", "agility", "pace"],
+    greenAttrs: ["first_touch", "passing", "anticipation", "flair", "off_the_ball", "work_rate", "balance", "stamina"] },
+  // ─── CENTRAL MIDFIELD ───
+  // sortitoutsi FM26 BBM (DM section): Key=Pas,Tck,OtB,TW,WR,Sta  Pref=Dri,Fin,FiT,Lon,Tec,Agg,Ant,Cmp,Dec,Pos,Acc,Bal,Pac,Str
   { name: "Box-to-Box Midfielder", short: "BBM", positions: ["MC"],
-    keyAttrs: ["stamina", "work_rate", "passing", "tackling", "off_the_ball", "teamwork", "decisions"],
-    greenAttrs: ["technique", "first_touch", "strength", "acceleration", "positioning"] },
+    keyAttrs: ["passing", "tackling", "off_the_ball", "teamwork", "work_rate", "stamina"],
+    greenAttrs: ["dribbling", "first_touch", "technique", "anticipation", "composure", "decisions", "positioning", "acceleration", "strength"] },
+  // sortitoutsi FM26 DLP: Key=FiT,Pas,Tec,Cmp,Dec,OtB,TW,Vis  Pref=Mrk,Tck,Ant,Con,Pos,WR,Bal,Sta
   { name: "Deep-Lying Playmaker", short: "DLP", positions: ["MC", "DM"],
-    keyAttrs: ["passing", "technique", "vision", "first_touch", "decisions", "composure", "teamwork"],
-    greenAttrs: ["anticipation", "positioning", "concentration"] },
+    keyAttrs: ["first_touch", "passing", "technique", "composure", "decisions", "off_the_ball", "teamwork", "vision"],
+    greenAttrs: ["marking", "tackling", "anticipation", "concentration", "positioning", "work_rate", "balance", "stamina"] },
+  // sortitoutsi FM26 AP: Key=FiT,Pas,Tec,Cmp,Dec,OtB,TW,Vis  Pref=Cro,Dri,Ant,Fla,Acc,Agi
   { name: "Advanced Playmaker", short: "AP", positions: ["MC", "AMC"],
-    keyAttrs: ["vision", "passing", "technique", "first_touch", "decisions", "off_the_ball", "composure"],
-    greenAttrs: ["flair", "dribbling", "anticipation", "acceleration"] },
+    keyAttrs: ["first_touch", "passing", "technique", "composure", "decisions", "off_the_ball", "teamwork", "vision"],
+    greenAttrs: ["crossing", "dribbling", "anticipation", "flair", "acceleration", "agility"] },
+  // "Mezzala" has no exact FM26 match; approximated from B2B Playmaker + Wide CM concepts.
   { name: "Mezzala", short: "MEZ", positions: ["MC"],
     keyAttrs: ["passing", "technique", "decisions", "dribbling", "acceleration", "off_the_ball", "vision"],
-    greenAttrs: ["first_touch", "composure", "flair", "stamina"] },
+    greenAttrs: ["first_touch", "composure", "flair", "stamina", "agility"] },
+  // "Ball-Winning Midfielder" has no exact FM26 match; based on DM + pressing/screening data.
   { name: "Ball-Winning Midfielder", short: "BWM", positions: ["MC", "DM"],
     keyAttrs: ["tackling", "aggression", "positioning", "stamina", "work_rate", "bravery", "teamwork"],
-    greenAttrs: ["anticipation", "concentration", "strength", "marking"] },
+    greenAttrs: ["anticipation", "concentration", "strength", "marking", "composure"] },
+  // ─── DEFENSIVE MIDFIELD ───
+  // sortitoutsi FM26 DM: Key=Tck,Ant,Con,Pos,TW  Pref=FiT,Mrk,Pas,Agg,Cmp,Dec,WR,Sta,Str
   { name: "Defensive Midfielder", short: "DM(d)", positions: ["DM"],
-    keyAttrs: ["tackling", "positioning", "concentration", "marking", "teamwork", "anticipation", "composure"],
-    greenAttrs: ["passing", "decisions", "strength", "stamina"] },
+    keyAttrs: ["tackling", "anticipation", "concentration", "positioning", "teamwork"],
+    greenAttrs: ["first_touch", "marking", "passing", "aggression", "composure", "decisions", "work_rate", "stamina", "strength"] },
+  // ─── DEFENCE ───
+  // sortitoutsi FM26 WB: Key=Cro,Mrk,Tck,TW,WR,Acc,Pac,Sta  Pref=Dri,FiT,Pas,Tec,Ant,Con,Dec,OtB,Pos,Agi,Bal
   { name: "Wing-Back", short: "WB", positions: ["WBL", "WBR"],
-    keyAttrs: ["crossing", "stamina", "pace", "acceleration", "work_rate", "tackling", "off_the_ball", "teamwork"],
-    greenAttrs: ["dribbling", "technique", "passing", "positioning"] },
+    keyAttrs: ["crossing", "marking", "tackling", "teamwork", "work_rate", "acceleration", "pace", "stamina"],
+    greenAttrs: ["dribbling", "first_touch", "passing", "technique", "anticipation", "decisions", "off_the_ball", "positioning", "agility"] },
+  // sortitoutsi FM26 FB: Key=Mrk,Tck,Ant,Con,Pos,TW,Acc  Pref=Cro,Dri,Pas,Tec,Dec,WR,Agi,Pac,Sta
   { name: "Full-Back", short: "FB", positions: ["DL", "DR"],
-    keyAttrs: ["tackling", "positioning", "marking", "stamina", "pace", "teamwork", "concentration"],
-    greenAttrs: ["crossing", "passing", "work_rate", "acceleration"] },
+    keyAttrs: ["marking", "tackling", "anticipation", "concentration", "positioning", "teamwork", "acceleration"],
+    greenAttrs: ["crossing", "dribbling", "passing", "technique", "decisions", "work_rate", "agility", "pace", "stamina"] },
+  // sortitoutsi FM26 BPD: Key=Hea,Mrk,Pas,Tck,Ant,Cmp,Pos,Jum,Str  Pref=FiT,Tec,Agg,Bra,Con,Dec,Vis,Pac
   { name: "Ball-Playing Defender", short: "BPD", positions: ["DC"],
-    keyAttrs: ["marking", "tackling", "heading", "positioning", "composure", "passing", "first_touch", "concentration"],
-    greenAttrs: ["strength", "jumping", "bravery", "decisions", "technique"] },
+    keyAttrs: ["heading", "marking", "passing", "tackling", "anticipation", "composure", "positioning", "jumping", "strength"],
+    greenAttrs: ["first_touch", "technique", "aggression", "bravery", "concentration", "decisions", "vision", "pace"] },
+  // sortitoutsi FM26 CD: Key=Hea,Mrk,Tck,Ant,Pos,Jum,Str  Pref=Agg,Bra,Cmp,Con,Dec,Pac
   { name: "Central Defender", short: "CD", positions: ["DC"],
-    keyAttrs: ["marking", "tackling", "heading", "positioning", "concentration", "bravery", "jumping", "strength"],
-    greenAttrs: ["anticipation", "composure", "decisions"] },
+    keyAttrs: ["heading", "marking", "tackling", "anticipation", "positioning", "jumping", "strength"],
+    greenAttrs: ["aggression", "bravery", "composure", "concentration", "decisions", "pace"] },
+  // sortitoutsi FM26 GK: Key=AeR,CoA,Com,Han,Ref,Agi,Con,Pos  Pref=Kic,1v1,Thr,Ant,Dec
   { name: "Goalkeeper", short: "GK", positions: ["GK"],
-    keyAttrs: ["handling", "reflexes", "one_on_ones", "command_of_area", "kicking", "aerial_reach", "rushing_out", "positioning"],
-    greenAttrs: ["composure", "concentration", "decisions", "agility", "first_touch"] },
+    keyAttrs: ["aerial_reach", "command_of_area", "communication", "handling", "reflexes", "agility", "concentration", "positioning"],
+    greenAttrs: ["kicking", "one_on_ones", "throwing", "anticipation", "decisions"] },
 ];
 
 function getPlayerAttrValue(p: Player, attr: string): number {
