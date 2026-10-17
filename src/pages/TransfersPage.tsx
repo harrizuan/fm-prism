@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import { displayName, formatValue, formatWage, caColor, paColor, ageColor, bestFormationFit, fitColorClass, calculateFeasibility, feasibilityScoreColor, valueEfficiency } from "@/types/player";
 import { ArrowLeftRight, Tag, UserMinus, Clock, Star, UserPlus, ArrowUp, ArrowDown, Filter, Sparkles, TrendingUp, ShieldAlert } from "lucide-react";
 import type { Player, PositionMap } from "@/types/player";
+import { PlayerDetail } from "@/components/player/PlayerDetail";
 
 type TransferTab = "smart" | "listed" | "free" | "expiring" | "loans";
 type SortKey = "ca" | "pa" | "age" | "value" | "wage" | "fit" | "feas" | "vfm" | "name";
@@ -19,7 +20,7 @@ const SLOT_POSITIONS: Record<string, (keyof PositionMap)[]> = {
 };
 
 export function TransfersPage() {
-  const { players, setSelectedPlayer, setCurrentPage, addToCompare, toggleShortlist, shortlist, managerProfile, squadIds } = useAppStore();
+  const { players, setSelectedPlayer, addToCompare, toggleShortlist, shortlist, managerProfile, squadIds } = useAppStore();
   const [tab, setTab] = useState<TransferTab>("smart");
   const [sortKey, setSortKey] = useState<SortKey>("feas");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
@@ -196,6 +197,7 @@ export function TransfersPage() {
   );
 
   return (
+    <div className="flex flex-1 overflow-hidden">
     <div className="flex-1 p-6 overflow-y-auto">
       <h1 className="text-2xl font-bold text-zinc-100 mb-4 flex items-center gap-3">
         <ArrowLeftRight size={28} className="text-fm-accent" />
@@ -339,7 +341,7 @@ export function TransfersPage() {
                 <tr
                   key={p.id}
                   className={`border-b border-zinc-800/50 hover:bg-zinc-800/30 cursor-pointer ${isOwn ? "opacity-50" : ""}`}
-                  onClick={() => { setSelectedPlayer(p); setCurrentPage("players"); }}
+                  onClick={() => { setSelectedPlayer(p); }}
                 >
                   <td className="px-2 py-2 text-zinc-100 font-medium truncate max-w-[150px]">
                     {displayName(p)}
@@ -403,6 +405,8 @@ export function TransfersPage() {
           )}
         </div>
       )}
+    </div>
+    <PlayerDetail />
     </div>
   );
 }

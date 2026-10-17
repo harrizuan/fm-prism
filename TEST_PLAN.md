@@ -120,6 +120,8 @@
 | 4.7 | Own-squad dimmed | squadIds players shown at 50% opacity | ✅ |
 | 4.8 | Shortlist toggle | ★ per row | ✅ |
 | 4.9 | Compare add | Add to compare from row | ✅ |
+| 4.10 | Player sidebar | Click row → sidebar with full detail (no page nav) | ✅ Added v0.4.3 |
+| 4.11 | Position counts | Dropdown shows squad count by position familiarity ≥15 | ✅ Fixed B15 v0.4.3 |
 
 ## 5. National Team Page
 
