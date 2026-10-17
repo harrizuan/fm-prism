@@ -21,7 +21,7 @@ export async function generateAIDatabase(
 
   const mp = managerProfile;
   const gY = mp.game_year ?? 2026;
-  const avgRep = mp.squad_avg_world_rep ?? 0;
+  const clubRep = mp.club_reputation ?? 0;
   const highW = mp.squad_highest_wage ?? 0;
   const totalV = mp.squad_total_value ?? 0;
   const squadPlayers = players.filter((p) => squadIds.has(p.id));
@@ -45,7 +45,7 @@ export async function generateAIDatabase(
   profile += `- Game Year: ${gY}\n- Club Rep: ${mp.club_reputation}\n\n`;
   profile += `## Squad Stats\n`;
   profile += `- Size: ${squadPlayers.length}\n- Avg CA: ${mp.squad_avg_ca}\n- Avg Age: ${mp.squad_avg_age.toFixed(1)}\n`;
-  profile += `- Avg World Rep: ${avgRep}/10000\n- Highest Wage: £${highW.toLocaleString()}/w\n`;
+  profile += `- Avg World Rep: ${mp.squad_avg_world_rep ?? 0}/10000\n- Club Rep: ${clubRep}/10000\n- Highest Wage: £${highW.toLocaleString()}/w\n`;
   profile += `- Total Value: £${(totalV / 1e6).toFixed(1)}M\n- Total Wage: £${(mp.squad_total_wage / 1e3).toFixed(0)}k/w\n\n`;
   profile += `## League Avg CA: ${leagueAvgCA}\n\n`;
   profile += `## Squad Needs\n`;
@@ -121,7 +121,7 @@ export async function generateAIDatabase(
     const ff = bestFormationFit(p);
     const roles = bestRoles(p, 2);
     const r1 = roles[0], r2 = roles[1];
-    const feas = isSquad ? -1 : calculateFeasibility(p, avgRep, highW, totalV, gY).score;
+    const feas = isSquad ? -1 : calculateFeasibility(p, clubRep, highW, totalV, gY).score;
     const t = p.technical, m = p.mental, ph = p.physical, h = p.hidden;
 
     allRows.push([

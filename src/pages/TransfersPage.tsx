@@ -113,7 +113,7 @@ export function TransfersPage() {
     );
     return available
       .map(p => {
-        const feas = calculateFeasibility(p, managerProfile.squad_avg_world_rep, managerProfile.squad_highest_wage, managerProfile.squad_total_value, gameYear);
+        const feas = calculateFeasibility(p, managerProfile.club_reputation, managerProfile.squad_highest_wage, managerProfile.squad_total_value, gameYear);
         const fm = bestFormationFit(p);
         const improvesPos = weakPositions.some(wp => wp.slot === fm.slot);
         const caBoost = p.current_ability - squadAvgCA;
@@ -142,7 +142,7 @@ export function TransfersPage() {
 
   const getFeas = (p: Player) => {
     if (!managerProfile || squadIds.has(p.id)) return -1;
-    return calculateFeasibility(p, managerProfile.squad_avg_world_rep, managerProfile.squad_highest_wage, managerProfile.squad_total_value, gameYear).score;
+    return calculateFeasibility(p, managerProfile.club_reputation, managerProfile.squad_highest_wage, managerProfile.squad_total_value, gameYear).score;
   };
 
   const getVfm = (p: Player) => valueEfficiency(p);

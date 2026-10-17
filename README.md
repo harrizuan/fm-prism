@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/FM_Prism-v0.4.4-00ff88?style=for-the-badge&labelColor=18181b" />
+  <img src="https://img.shields.io/badge/FM_Prism-v0.4.5-00ff88?style=for-the-badge&labelColor=18181b" />
   <img src="https://img.shields.io/badge/FM26-Windows-0ea5e9?style=for-the-badge&labelColor=18181b" />
   <img src="https://img.shields.io/badge/Tauri_2-Rust_+_React-f97316?style=for-the-badge&labelColor=18181b" />
   <img src="https://img.shields.io/badge/License-MIT-a855f7?style=for-the-badge&labelColor=18181b" />
@@ -269,6 +269,13 @@ This project would not exist without the work of these people and communities:
 ---
 
 ## Changelog
+
+### v0.4.5 — Feasibility engine v2: uses actual club reputation + league tier awareness (Oct 2026)
+
+- **BREAKING FIX**: Feasibility engine now uses `club_reputation` (the REAL FM club reputation, 0-10000) instead of `squad_avg_world_rep` (average player world reputation). Previous versions compared player rep against squad avg rep (~2500 for Notts Co), masking the true gap. Now uses the actual club reputation which is much lower for League Two clubs.
+- **NEW**: League tier matching — players at "National" reputation tier will refuse "Local" tier clubs (League Two). Adds proper tier gap penalty (-12 to -45 points) based on the gap between player and club tiers.
+- **FIX**: Ambition penalty now accounts for tier gap: Very Ambitious (≥16) + 2+ tier gap = -30 (was -8). This correctly predicts FM's "wouldn't sign under any circumstances" refusal.
+- **FIX**: All 6 call sites updated: TransfersPage, PlayerDetail, PlayerGrid (×3), ShortlistsPage, aiBrief
 
 ### v0.4.4 — Feasibility engine overhaul (Oct 2026)
 

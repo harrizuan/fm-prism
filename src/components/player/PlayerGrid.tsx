@@ -160,7 +160,7 @@ const allColumns: ColumnDef<Player, any>[] = [
   col("tfeas", "Feas%", "scouting", 46, (r) => {
       const store = useAppStore.getState();
       if (!store.managerProfile || store.squadIds.has(r.id)) return -1;
-      return calculateFeasibility(r, store.managerProfile.squad_avg_world_rep, store.managerProfile.squad_highest_wage, store.managerProfile.squad_total_value, store.managerProfile.game_year).score;
+      return calculateFeasibility(r, store.managerProfile.club_reputation, store.managerProfile.squad_highest_wage, store.managerProfile.squad_total_value, store.managerProfile.game_year).score;
     },
     (v) => {
       const n = v as number;
@@ -245,7 +245,7 @@ export function PlayerGrid() {
     if (minFeas && managerProfile) {
       data = data.filter((p) => {
         if (squadIds.has(p.id)) return false;
-        return calculateFeasibility(p, managerProfile.squad_avg_world_rep, managerProfile.squad_highest_wage, managerProfile.squad_total_value, managerProfile.game_year).score >= minFeas;
+        return calculateFeasibility(p, managerProfile.club_reputation, managerProfile.squad_highest_wage, managerProfile.squad_total_value, managerProfile.game_year).score >= minFeas;
       });
     }
     if (formationSlotFilter) {
@@ -259,7 +259,7 @@ export function PlayerGrid() {
     if (showRealisticOnly && managerProfile) {
       data = data.filter((p) => {
         if (squadIds.has(p.id)) return false; // exclude own players
-        const f = calculateFeasibility(p, managerProfile.squad_avg_world_rep, managerProfile.squad_highest_wage, managerProfile.squad_total_value, managerProfile.game_year);
+        const f = calculateFeasibility(p, managerProfile.club_reputation, managerProfile.squad_highest_wage, managerProfile.squad_total_value, managerProfile.game_year);
         return f.score >= 45; // "possible" or better
       });
     }

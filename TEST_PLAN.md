@@ -1,6 +1,6 @@
 # FM Scout Pro — Test Plan & Feature Audit
 
-> Generated: 2026-10-18 | Version: 0.4.4 — Feasibility engine overhaul  
+> Generated: 2026-10-18 | Version: 0.4.5 — Feasibility v2 (actual club rep + league tier)  
 > Audit every feature one-by-one after each build.
 
 ---
@@ -30,6 +30,8 @@
 | B15 | Transfer position dropdown all "0 in squad" | squadPosStrength counted by bestFormationFit slot label (DCL/DCR/DML/DMR) which never matched dropdown keys (DC/DM). MC/ML/MR/WBL/WBR not in BEST_LLM_SLOTS at all. | Count by actual position familiarity ≥15 (Accomplished+) | v0.4.3 |
 | B16 | Feasibility rep gap used raw squad avg world rep | clubAvgWorldRep (~2500) ≈ player WorldRep for mid-tier players, so gap appeared ~0 even when FM refuses. Club rep is much lower than player avg rep for lower-league clubs. | Use estimated club rep (65% of avg player world rep) | v0.4.4 |
 | B17 | Ambition penalty too weak (-8) | FM gives absolute refusal ("under any circumstances") when ambition ≥16 and rep gap >1000, but engine only penalised -8 | -25 for amb≥16 + gap>1000; -15 for amb≥12 + gap>1500; -12 for amb≥16 + gap>500 | v0.4.4 |
+| B18 | Feasibility used squad_avg_world_rep (~2500) for all reputation checks | FM uses CLUB reputation for signing willingness, not average player world rep. For Notts Co (League Two), club rep is much lower than squad avg world rep, masking the real gap. | Changed to use `club_reputation` from ManagerProfile directly. All 6 call sites updated. | v0.4.5 |
+| B19 | No league tier awareness in feasibility | FM has a minimum league tier threshold — players at National rep+ tier refuse Local tier (League Two) clubs regardless of other factors | Added tier classification (local/regional/national/continental/world) with -12 to -45 penalty for tier mismatches | v0.4.5 |
 
 ## Bugs Fixed in v0.3.0
 

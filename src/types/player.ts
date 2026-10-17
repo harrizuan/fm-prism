@@ -488,7 +488,7 @@ export interface TransferFeasibility {
 
 export function calculateFeasibility(
   player: Player,
-  clubAvgWorldRep: number,
+  clubReputation: number,
   highestWage: number,
   totalSquadValue: number,
   gameYear = 2026,
@@ -500,16 +500,37 @@ export function calculateFeasibility(
   // 1. REPUTATION GAP (35-point swing) — Research: biggest factor
   // Reputation scale: 0-10,000 (0-2750 local, 2750-4000 regional,
   // 4000-6000 national, 6000-8000 continental, 8000-10000 world class)
-  // NOTE: clubAvgWorldRep is passed in, but it's the average player
-  // world rep — NOT the club's own reputation. FM uses club rep for
-  // signing willingness. Since club_rep isn't available here, we use
-  // the lower of clubAvgWorldRep and clubAvgWorldRep * 0.65 as a proxy
-  // (lower-league clubs always have club rep below their player avg rep).
+  // NOW uses the actual club_reputation from ManagerProfile.
   // ═══════════════════════════════════════════════════════════
   const playerRep = Math.max(player.world_reputation, player.current_reputation);
-  // Proxy: club reputation is typically 60-70% of average player world rep for lower-league clubs
-  const estimatedClubRep = clubAvgWorldRep * 0.65;
-  const repGap = playerRep - estimatedClubRep;
+  const repGap = playerRep - clubReputation;
+
+  // League tier derived from club reputation
+  const leagueTier = clubReputation < 2750 ? "local"
+    : clubReputation < 4000 ? "regional"
+    : clubReputation < 6000 ? "national"
+    : clubReputation < 8000 ? "continental" : "world";
+
+  // Player's expected tier from their world reputation
+  const playerTier = playerRep < 1500 ? "local"
+    : playerRep < 3000 ? "regional"
+    : playerRep < 5000 ? "national"
+    : playerRep < 7500 ? "continental" : "world";
+
+  // HARD CHECK: league tier mismatch — players at higher tiers refuse lower-tier clubs
+  const tierOrder = { local: 0, regional: 1, national: 2, continental: 3, world: 4 };
+  const tierGap = tierOrder[playerTier] - tierOrder[leagueTier];
+
+  if (tierGap >= 3) {
+    score -= 45;
+    reasons.push(`Tier mismatch (${playerTier} vs ${leagueTier}) — will refuse outright`);
+  } else if (tierGap >= 2) {
+    score -= 30;
+    reasons.push(`Two tiers above us (${playerTier} player, ${leagueTier} club) — very unlikely`);
+  } else if (tierGap >= 1) {
+    score -= 12;
+    reasons.push(`One tier above us — needs convincing project`);
+  }
 
   if (repGap <= -2000) {
     score += 25;
@@ -633,13 +654,19 @@ export function calculateFeasibility(
   const amb = player.hidden.ambition;
   const loy = player.hidden.loyalty;
 
-  if (amb >= 16 && repGap > 1000) {
+  if (amb >= 16 && tierGap >= 2) {
+    score -= 30;
+    reasons.push("Very ambitious + 2+ tier gap — FM says 'under any circumstances'");
+  } else if (amb >= 16 && repGap > 800) {
     score -= 25;
-    reasons.push("Very ambitious + large rep gap — will refuse (FM: 'under any circumstances')");
-  } else if (amb >= 16 && repGap > 500) {
+    reasons.push("Very ambitious + large rep gap — will refuse");
+  } else if (amb >= 12 && tierGap >= 2) {
+    score -= 20;
+    reasons.push("Ambitious + 2+ tier gap — expects much bigger club");
+  } else if (amb >= 16 && repGap > 300) {
     score -= 12;
     reasons.push("High ambition + we're below him — wants bigger clubs");
-  } else if (amb >= 12 && repGap > 1500) {
+  } else if (amb >= 12 && repGap > 1000) {
     score -= 15;
     reasons.push("Ambitious + significant rep gap — very unlikely to accept");
   } else if (amb >= 16 && repGap <= 0) {
