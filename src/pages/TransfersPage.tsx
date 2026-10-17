@@ -344,7 +344,7 @@ export function TransfersPage() {
                   <td className="px-2 py-2 text-zinc-100 font-medium truncate max-w-[150px]">
                     {displayName(p)}
                     {tab === "smart" && (p as any)._improvesPos && (
-                      <TrendingUp size={10} className="inline ml-1 text-green-400" title="Fills weak position" />
+                      <TrendingUp size={10} className="inline ml-1 text-green-400" />
                     )}
                   </td>
                   <td className="px-2 py-2 text-center text-sky-400 font-mono text-xs">{p.natural_position}</td>

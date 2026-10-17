@@ -1,0 +1,17 @@
+---
+description: Mandatory workflow after any code fix or feature change
+alwaysApply: true
+---
+
+# Fix/Change Workflow
+
+After every code change (bug fix, feature, refactor):
+
+1. **Build**: `cd fm-scout-pro; pnpm tauri build` (full Tauri build)
+2. **Launch**: Run the built exe to verify the fix visually
+3. **Update docs**:
+   - `TEST_PLAN.md` — add bug row or update feature table
+   - `README.md` — update changelog section
+4. **Commit & push**: `git add -A; git commit -m "..."; git push origin master`
+
+Never skip steps. Never commit code without building first. Never push without updating docs.

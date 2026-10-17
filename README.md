@@ -277,6 +277,7 @@ This project would not exist without the work of these people and communities:
 - **FIX**: Box-to-Box Midfielder was missing 5 preferable attrs: `finishing`, `long_shots`, `aggression`, `balance`, `pace` (had 9/14, now 14/14) — this was causing significant false positives/negatives
 - **FIX**: Wing-Back was missing `concentration` + `balance` from preferable attrs (had 9/11, now 11/11)
 - **FIX**: National Team page used 50/50 IP/OOP weighting instead of 60/40 — now consistent with Squad page and bestFormationFit everywhere
+- **FIX**: Transfer page position dropdown showed "0 in squad, avg 0" for DC/DM/MC/ML/MR/WBL/WBR — slot name mismatch between bestFormationFit labels (DCL/DCR/DML/DMR) and dropdown keys. Now counts by actual position familiarity ≥15
 - **DOCS**: Added warning that `creativity` field contains flair data (FM26 renamed Creativity→Vision)
 - All role attrs verified against sortitoutsi FM26 data. Cross-referenced with FM-Arena FM26 data mining (Aug 2026)
 

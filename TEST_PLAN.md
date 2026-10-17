@@ -27,6 +27,7 @@
 | B12 | Wing-Back missing concentration + balance | Code had 9/11 green attrs | Added concentration, balance | v0.4.3 |
 | B13 | NationalTeamPage 50/50 IP/OOP weighting | slotScore() used (ip+oop)/2, SquadPage uses ip*0.6+oop*0.4 | Fixed to ip*0.6+oop*0.4 — consistent everywhere | v0.4.3 |
 | B14 | creativity field misleading | FM26 renamed Creativity→Vision; parser maps both creativity and flair to raw[26] | Added documentation warning | v0.4.3 |
+| B15 | Transfer position dropdown all "0 in squad" | squadPosStrength counted by bestFormationFit slot label (DCL/DCR/DML/DMR) which never matched dropdown keys (DC/DM). MC/ML/MR/WBL/WBR not in BEST_LLM_SLOTS at all. | Count by actual position familiarity ≥15 (Accomplished+) | v0.4.3 |
 
 ## Bugs Fixed in v0.3.0
 
