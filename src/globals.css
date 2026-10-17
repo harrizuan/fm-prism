@@ -1,0 +1,34 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --fm-green: #1a472a;
+  --fm-green-light: #2d6a3f;
+  --fm-accent: #4ade80;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: #171717; }
+::-webkit-scrollbar-thumb { background: #404040; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #525252; }
+
+/* Attribute color classes */
+.attr-terrible { color: #ef4444; }
+.attr-poor { color: #f97316; }
+.attr-average { color: #eab308; }
+.attr-good { color: #22c55e; }
+.attr-excellent { color: #3b82f6; }
+.attr-worldclass { color: #a855f7; font-weight: 700; }
