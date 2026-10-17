@@ -177,9 +177,9 @@ export function PlayerDetail() {
               <h3 className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider">Transfer Feasibility</h3>
             </div>
             {(() => {
-              const f = calculateFeasibility(p, managerProfile.club_reputation, managerProfile.squad_highest_wage, managerProfile.squad_total_value, managerProfile.game_year);
+              const f = calculateFeasibility(p, managerProfile.squad_avg_world_rep, managerProfile.squad_highest_wage, managerProfile.squad_total_value, managerProfile.game_year);
               const pRep = Math.max(p.world_reputation, p.current_reputation);
-              const gap = pRep - managerProfile.club_reputation;
+              const gap = pRep - managerProfile.squad_avg_world_rep;
               const gapColor = gap <= -1000 ? "text-green-400" : gap <= 0 ? "text-emerald-400" : gap <= 1000 ? "text-yellow-400" : gap <= 2500 ? "text-orange-400" : "text-red-400";
               return (
                 <div className={`rounded-lg border px-2 py-1.5 ${feasibilityBg(f.level)}`}>

@@ -488,7 +488,7 @@ export interface TransferFeasibility {
 
 export function calculateFeasibility(
   player: Player,
-  clubReputation: number,
+  squadAvgWorldRep: number,
   highestWage: number,
   totalSquadValue: number,
   gameYear = 2026,
@@ -500,16 +500,31 @@ export function calculateFeasibility(
   // 1. REPUTATION GAP (35-point swing) — Research: biggest factor
   // Reputation scale: 0-10,000 (0-2750 local, 2750-4000 regional,
   // 4000-6000 national, 6000-8000 continental, 8000-10000 world class)
-  // NOW uses the actual club_reputation from ManagerProfile.
+  //
+  // We use squad_avg_world_rep (same 0-10000 scale as player rep)
+  // with a LEAGUE DISCOUNT — club reputation is always lower than
+  // the average player reputation, especially at lower leagues.
+  // Calibrated from FM26 in-game testing:
+  //   League Two: Assef (WRep 1408) refuses, Segurola (1884) refuses
+  //   → effective club rep for League Two ≈ squad_avg × 0.45
   // ═══════════════════════════════════════════════════════════
   const playerRep = Math.max(player.world_reputation, player.current_reputation);
-  const repGap = playerRep - clubReputation;
 
-  // League tier derived from club reputation
-  const leagueTier = clubReputation < 2750 ? "local"
-    : clubReputation < 4000 ? "regional"
-    : clubReputation < 6000 ? "national"
-    : clubReputation < 8000 ? "continental" : "world";
+  // Dynamic discount based on league level (estimated from squad avg rep)
+  const leagueDiscount = squadAvgWorldRep < 2000 ? 0.40
+    : squadAvgWorldRep < 3000 ? 0.45
+    : squadAvgWorldRep < 4500 ? 0.55
+    : squadAvgWorldRep < 6000 ? 0.70
+    : 0.85;
+  const effectiveClubRep = Math.round(squadAvgWorldRep * leagueDiscount);
+
+  const repGap = playerRep - effectiveClubRep;
+
+  // League tier derived from effective club reputation
+  const leagueTier = effectiveClubRep < 1500 ? "local"
+    : effectiveClubRep < 2500 ? "regional"
+    : effectiveClubRep < 4000 ? "national"
+    : effectiveClubRep < 6000 ? "continental" : "world";
 
   // Player's expected tier from their world reputation
   const playerTier = playerRep < 1500 ? "local"

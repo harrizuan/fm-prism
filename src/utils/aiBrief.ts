@@ -21,7 +21,7 @@ export async function generateAIDatabase(
 
   const mp = managerProfile;
   const gY = mp.game_year ?? 2026;
-  const clubRep = mp.club_reputation ?? 0;
+  const clubRep = mp.squad_avg_world_rep ?? 0;
   const highW = mp.squad_highest_wage ?? 0;
   const totalV = mp.squad_total_value ?? 0;
   const squadPlayers = players.filter((p) => squadIds.has(p.id));

@@ -7,7 +7,7 @@ export function ShortlistsPage() {
 
   const getFeas = (p: any) => {
     if (!managerProfile || squadIds.has(p.id)) return -1;
-    return calculateFeasibility(p, managerProfile.club_reputation, managerProfile.squad_highest_wage, managerProfile.squad_total_value, managerProfile.game_year).score;
+    return calculateFeasibility(p, managerProfile.squad_avg_world_rep, managerProfile.squad_highest_wage, managerProfile.squad_total_value, managerProfile.game_year).score;
   };
 
   return (
