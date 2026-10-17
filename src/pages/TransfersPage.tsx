@@ -45,19 +45,14 @@ export function TransfersPage() {
   }, [squadPlayers]);
 
   const squadPosStrength = useMemo(() => {
-    const posMap: Record<string, number[]> = {};
-    for (const [slot, keys] of Object.entries(SLOT_POSITIONS)) {
-      posMap[slot] = [];
-    }
-    for (const p of squadPlayers) {
-      const fm = bestFormationFit(p);
-      if (fm.slot && fm.slot !== "—") {
-        if (!posMap[fm.slot]) posMap[fm.slot] = [];
-        posMap[fm.slot].push(p.current_ability);
-      }
-    }
     const result: Record<string, { count: number; avgCA: number; maxCA: number }> = {};
-    for (const [slot, cas] of Object.entries(posMap)) {
+    for (const [slot, posKeys] of Object.entries(SLOT_POSITIONS)) {
+      const cas: number[] = [];
+      for (const p of squadPlayers) {
+        const posMap = p.positions as unknown as Record<string, number>;
+        const best = Math.max(...posKeys.map(k => posMap[k] ?? 0));
+        if (best >= 15) cas.push(p.current_ability);
+      }
       cas.sort((a, b) => b - a);
       result[slot] = {
         count: cas.length,
