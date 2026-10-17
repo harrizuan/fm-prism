@@ -1,6 +1,6 @@
 # FM Scout Pro — Test Plan & Feature Audit
 
-> Generated: 2026-10-17 | Version: 0.3.0 — Post-audit release  
+> Generated: 2026-10-18 | Version: 0.4.3 — Deep audit release  
 > Audit every feature one-by-one after each build.
 
 ---
@@ -14,6 +14,19 @@
 | **Export** | TSV/CSV/JSON + AI Brief | Data export for external analysis |
 
 ---
+
+## Bugs Fixed in v0.4.1–v0.4.3
+
+| # | Bug | Root Cause | Fix | Version |
+|---|-----|-----------|-----|---------|
+| B7 | 45 key/preferable misclassifications | Role attrs based on FM25 or incorrect sources | Rewritten against sortitoutsi FM26 complete guide | v0.4.1 |
+| B8 | Winger Technique wrongly demoted to green | FM Dossier incorrectly called it blue/preferable | Reversed: Technique is KEY per sortitoutsi + fm26tactics | v0.4.1 |
+| B9 | Inside Forward missing work_rate + stamina | Code had 8/10 green attrs, sortitoutsi says 10 | Added work_rate, stamina | v0.4.3 |
+| B10 | Inside Winger missing stamina | Code had 10/11 green attrs | Added stamina | v0.4.3 |
+| B11 | BBM missing 5 greenAttrs | Code had 9/14 green attrs (finishing, long_shots, aggression, balance, pace missing) | Added all 5 — was causing major false pos/neg | v0.4.3 |
+| B12 | Wing-Back missing concentration + balance | Code had 9/11 green attrs | Added concentration, balance | v0.4.3 |
+| B13 | NationalTeamPage 50/50 IP/OOP weighting | slotScore() used (ip+oop)/2, SquadPage uses ip*0.6+oop*0.4 | Fixed to ip*0.6+oop*0.4 — consistent everywhere | v0.4.3 |
+| B14 | creativity field misleading | FM26 renamed Creativity→Vision; parser maps both creativity and flair to raw[26] | Added documentation warning | v0.4.3 |
 
 ## Bugs Fixed in v0.3.0
 
@@ -126,6 +139,7 @@
 | 5.13 | 2nd nat display | Amber "2nd" badge | ✅ |
 | 5.14 | Pitch visualization | XI on formation pitch with CA + position fit | ✅ |
 | 5.15 | Average XI CA | Header shows XI avg CA | ✅ |
+| 5.16 | IP/OOP weighting | slotScore uses 60% IP + 40% OOP (same as SquadPage) | ✅ Fixed B13 v0.4.3 |
 
 ## 6. Compare Page
 
@@ -174,32 +188,44 @@
 | 9.4 | Auto-gen on scan | Triggers after every load/rescan | ✅ |
 | 9.5 | Squad needs | 14 positions with critical/thin/ok/deep | ✅ |
 
-## 10. Role Ratings Engine (19 Roles)
+## 10. Role Ratings Engine (27 Roles)
 
-| # | Role | Short | Positions | Key Attrs Count |
-|---|------|-------|-----------|----------------|
-| 10.1 | Advanced Forward | AF | ST | 7 key + 3 green |
-| 10.2 | Target Man | TM | ST | 6 + 4 |
-| 10.3 | Deep-Lying Forward | DLF | ST | 7 + 3 |
-| 10.4 | Pressing Forward | PF | ST | 8 + 3 |
-| 10.5 | Complete Forward | CF | ST | 10 + 4 |
-| 10.6 | Attacking Midfielder | AM | AMC | 7 + 4 |
-| 10.7 | Trequartista | TQ | AMC | 8 + 4 |
-| 10.8 | Inside Forward | IF | AML/AMR | 8 + 4 |
-| 10.9 | Winger | W | AML/AMR/ML/MR | 7 + 4 |
-| 10.10 | Box-to-Box | BBM | MC | 7 + 5 |
-| 10.11 | Deep-Lying Playmaker | DLP | MC/DM | 7 + 3 |
-| 10.12 | Advanced Playmaker | AP | MC/AMC | 7 + 4 |
-| 10.13 | Mezzala | MEZ | MC | 7 + 4 |
-| 10.14 | Ball-Winning Mid | BWM | MC/DM | 7 + 4 |
-| 10.15 | Defensive Mid | DM(d) | DM | 7 + 4 |
-| 10.16 | Wing-Back | WB | WBL/WBR | 8 + 4 |
-| 10.17 | Full-Back | FB | DL/DR | 7 + 4 |
-| 10.18 | Ball-Playing Def | BPD | DC | 8 + 5 |
-| 10.19 | Central Defender | CD | DC | 8 + 3 |
-| 10.20 | Goalkeeper | GK | GK | 8 + 5 |
+All role key/preferable classifications verified against [sortitoutsi FM26](https://sortitoutsi.net/content/75078/fm26-important-attributes-for-every-role). Five legacy roles (marked ⚠️) have no exact FM26 IP match and use approximated attributes.
 
-**v0.3.0 fix**: All playmaker roles (AM, TQ, DLP, AP, MEZ, IF, W, DLF, CF) now correctly reference `vision` instead of `creativity`. The `creativity` field was a duplicate of `flair` (both reading raw[26] in Rust parser). This fix ensures Vision (raw[10]) — the correct FM26 attribute — is used.
+| # | Role | Short | Positions | Key + Green | Source |
+|---|------|-------|-----------|-------------|--------|
+| 10.1 | Advanced Forward | AF | ST | 7 + 4 | ⚠️ Legacy approximation |
+| 10.2 | Poacher | P | ST | 7 + 4 | sortitoutsi FM26 ✅ |
+| 10.3 | Target Man | TM | ST | 9 + 4 | sortitoutsi FM26 ✅ |
+| 10.4 | Deep-Lying Forward | DLF | ST | 6 + 7 | sortitoutsi FM26 ✅ |
+| 10.5 | Pressing Forward | PF | ST | 8 + 4 | ⚠️ Legacy approximation |
+| 10.6 | Complete Forward | CF | ST | 8 + 8 | sortitoutsi FM26 ✅ |
+| 10.7 | False Nine | F9 | ST | 10 + 5 | sortitoutsi FM26 ✅ |
+| 10.8 | Channel Forward | ChF | ST | 8 + 9 | sortitoutsi FM26 ✅ |
+| 10.9 | Attacking Midfielder | AM | AMC | 7 + 8 | sortitoutsi FM26 ✅ |
+| 10.10 | Trequartista | TQ | AMC | 8 + 5 | ⚠️ Legacy approximation |
+| 10.11 | Second Striker | SS | AMC | 6 + 10 | sortitoutsi FM26 ✅ |
+| 10.12 | Inside Forward | IF | AML/AMR | 8 + 10 | sortitoutsi FM26 ✅ |
+| 10.13 | Wide Forward | WF | AML/AMR | 8 + 8 | sortitoutsi FM26 ✅ |
+| 10.14 | Winger | W | AML/AMR/ML/MR | 7 + 8 | sortitoutsi FM26 ✅ |
+| 10.15 | Inside Winger | IW | AML/AMR/ML/MR | 7 + 11 | sortitoutsi FM26 ✅ |
+| 10.16 | Wide Midfielder | WM | ML/MR | 7 + 8 | sortitoutsi FM26 ✅ |
+| 10.17 | Box-to-Box Midfielder | BBM | MC | 6 + 14 | sortitoutsi FM26 ✅ |
+| 10.18 | Deep-Lying Playmaker | DLP | MC/DM | 8 + 8 | sortitoutsi FM26 ✅ |
+| 10.19 | Advanced Playmaker | AP | MC/AMC | 8 + 6 | sortitoutsi FM26 ✅ |
+| 10.20 | Mezzala | MEZ | MC | 7 + 5 | ⚠️ Legacy approximation |
+| 10.21 | Ball-Winning Midfielder | BWM | MC/DM | 7 + 5 | ⚠️ Legacy approximation |
+| 10.22 | Defensive Midfielder | DM(d) | DM | 5 + 9 | sortitoutsi FM26 ✅ |
+| 10.23 | Half-Back | HB | DM | 9 + 8 | sortitoutsi FM26 ✅ |
+| 10.24 | Wing-Back | WB | WBL/WBR | 8 + 11 | sortitoutsi FM26 ✅ |
+| 10.25 | Full-Back | FB | DL/DR | 7 + 9 | sortitoutsi FM26 ✅ |
+| 10.26 | Ball-Playing Defender | BPD | DC | 9 + 8 | sortitoutsi FM26 ✅ |
+| 10.27 | Central Defender | CD | DC | 7 + 6 | sortitoutsi FM26 ✅ |
+| 10.28 | Goalkeeper | GK | GK | 8 + 5 | sortitoutsi FM26 ✅ |
+
+**v0.4.1 fix**: 45 attribute misclassifications fixed across 15 roles.
+**v0.4.2**: 7 new FM26 roles added (F9, ChF, SS, WF, IW, WM, HB).
+**v0.4.3 fix**: 4 roles had missing green attrs (IF+2, IW+1, BBM+5, WB+2). NationalTeamPage IP/OOP weighting fixed to 60/40.
 
 ## 11. Transfer Feasibility Engine
 
