@@ -38,6 +38,8 @@ fn main() {
             commands::get_free_agents,
             commands::write_file,
             commands::get_youth_teams,
+            commands::get_staff_data,
+            commands::get_club_facilities,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

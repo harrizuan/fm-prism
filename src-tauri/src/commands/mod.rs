@@ -13,6 +13,8 @@ pub struct AppState {
     pub players: Mutex<Vec<Player>>,
     pub squad_ids: Mutex<HashSet<u32>>,
     pub youth_teams: Mutex<Vec<YouthTeam>>,
+    pub staff: Mutex<Vec<StaffMember>>,
+    pub club_facilities: Mutex<Option<ClubFacilities>>,
     pub manager_profile: Mutex<Option<ManagerProfile>>,
     pub game_info: Mutex<Option<GameInfo>>,
     pub game_year: Mutex<u16>,
@@ -27,6 +29,43 @@ pub struct YouthTeam {
     pub avg_age: f32,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StaffMember {
+    pub name: String,
+    pub age: u8,
+    pub nationality: String,
+    pub team_name: String,
+    pub coaching: CoachingAttrs,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct CoachingAttrs {
+    pub attacking: u8,
+    pub defending: u8,
+    pub fitness: u8,
+    pub goalkeeping: u8,
+    pub mental: u8,
+    pub tactical: u8,
+    pub technical: u8,
+    pub working_with_youngsters: u8,
+    pub determination: u8,
+    pub discipline: u8,
+    pub man_management: u8,
+    pub motivating: u8,
+    pub judging_ability: u8,
+    pub judging_potential: u8,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ClubFacilities {
+    pub training: u8,
+    pub youth_facilities: u8,
+    pub junior_coaching: u8,
+    pub youth_recruitment: u8,
+    pub corporate: u8,
+    pub youth_importance: u8,
+}
+
 impl Default for AppState {
     fn default() -> Self {
         Self {
@@ -34,6 +73,8 @@ impl Default for AppState {
             players: Mutex::new(Vec::new()),
             squad_ids: Mutex::new(HashSet::new()),
             youth_teams: Mutex::new(Vec::new()),
+            staff: Mutex::new(Vec::new()),
+            club_facilities: Mutex::new(None),
             manager_profile: Mutex::new(None),
             game_info: Mutex::new(None),
             game_year: Mutex::new(2025),
@@ -629,6 +670,53 @@ pub fn scan_for_players(app: AppHandle, state: State<'_, AppState>) -> Result<us
 
                             *state.youth_teams.lock().unwrap() = youth_teams_out;
                         }
+
+                        // Phase 4: Probe for coaching staff
+                        app.emit("load_progress", LoadProgress {
+                            stage: "scanning".into(), current: 2, total: 3,
+                            message: "Probing for coaching staff...".into(),
+                        }).ok();
+
+                        let player_ptr_set: HashSet<usize> = player_ptrs.iter().cloned().collect();
+                        let mut all_staff: Vec<StaffMember> = Vec::new();
+
+                        // Probe first team for staff
+                        let first_team_staff = probe_team_staff(
+                            handle, club_team.team_ptr, &player_ptr_set, game_year, &club_name
+                        );
+                        log::info!("First team staff found: {}", first_team_staff.len());
+                        all_staff.extend(first_team_staff);
+
+                        // Probe youth teams for their own staff
+                        if club_ptr > 0x10000 {
+                            for t_off in (0x08..0x100usize).step_by(8) {
+                                let tp = memory::read_ptr(handle, club_ptr + t_off).unwrap_or(0);
+                                if tp < 0x10000 || tp == club_team.team_ptr { continue; }
+                                let tn = memory::read_fm_string(handle, tp + 192);
+                                if tn.is_empty() { continue; }
+                                let youth_staff = probe_team_staff(
+                                    handle, tp, &player_ptr_set, game_year, &tn
+                                );
+                                if !youth_staff.is_empty() {
+                                    log::info!("Youth team '{}' staff: {}", tn, youth_staff.len());
+                                    all_staff.extend(youth_staff);
+                                }
+                            }
+                        }
+
+                        // Probe club facilities
+                        if club_ptr > 0x10000 {
+                            let fac = probe_club_facilities(handle, club_ptr);
+                            if let Some(ref f) = fac {
+                                log::info!("Club facilities: training={} youth={} jr_coaching={} youth_rec={} corp={} importance={}",
+                                    f.training, f.youth_facilities, f.junior_coaching,
+                                    f.youth_recruitment, f.corporate, f.youth_importance);
+                            }
+                            *state.club_facilities.lock().unwrap() = fac;
+                        }
+
+                        log::info!("Total staff found: {}", all_staff.len());
+                        *state.staff.lock().unwrap() = all_staff;
                     }
                     Err(e) => {
                         log::warn!("Could not find managed team: {} — falling back to region scan", e);
@@ -1054,4 +1142,197 @@ pub async fn get_free_agents(state: State<'_, AppState>) -> Result<Vec<Player>, 
 #[tauri::command]
 pub async fn get_youth_teams(state: State<'_, AppState>) -> Result<Vec<YouthTeam>, String> {
     Ok(state.youth_teams.lock().unwrap().clone())
+}
+
+/// Probe team struct for coaching staff vectors.
+/// Staff are person-like objects (have valid names) but are NOT in the player list.
+/// Coaching attributes are probed at candidate offsets in the person/staff struct.
+fn probe_team_staff(
+    handle: HANDLE,
+    team_ptr: usize,
+    player_ptrs: &HashSet<usize>,
+    game_year: u16,
+    team_label: &str,
+) -> Vec<StaffMember> {
+    let mut staff: Vec<StaffMember> = Vec::new();
+    if team_ptr < 0x10000 { return staff; }
+
+    let player_person_offsets: [usize; 2] = [parser::PLAYER_PERSON_OFFSET, parser::HUMAN_PERSON_OFFSET];
+    let mut seen_names: HashSet<String> = HashSet::new();
+
+    // Probe team struct for vectors that contain person-like objects
+    for vec_off in (0x40..0x200usize).step_by(8) {
+        if vec_off == parser::TEAM_PLAYERS_START_OFFSET as usize { continue; }
+        let vs = memory::read_ptr(handle, team_ptr + vec_off).unwrap_or(0);
+        let ve = memory::read_ptr(handle, team_ptr + vec_off + 8).unwrap_or(0);
+        if vs < 0x10000 || ve <= vs { continue; }
+        let count = (ve - vs) / 8;
+        if count == 0 || count > 50 { continue; }
+
+        let mut vec_has_staff = false;
+        for j in 0..count {
+            let ptr = match memory::read_ptr(handle, vs + j * 8) {
+                Ok(p) if p > 0x10000 && p < 0x800_0000_0000 => p,
+                _ => continue,
+            };
+            if player_ptrs.contains(&ptr) { continue; }
+
+            // Try to parse as a person at known offsets
+            for &person_off in &player_person_offsets {
+                let person_base = if person_off == 0 { ptr } else {
+                    let pv = memory::read_ptr(handle, ptr + person_off).unwrap_or(0);
+                    if pv > 0x10000 && pv < 0x800_0000_0000 { pv } else { ptr + person_off }
+                };
+
+                let first = memory::read_fm_string(handle, person_base + parser::PERSON_FIRST_NAME_OFFSET);
+                let last = memory::read_fm_string(handle, person_base + parser::PERSON_SECOND_NAME_OFFSET);
+                if first.is_empty() && last.is_empty() { continue; }
+                if !first.chars().any(|c| c.is_alphabetic()) && !last.chars().any(|c| c.is_alphabetic()) { continue; }
+
+                let full_name = if !first.is_empty() && !last.is_empty() {
+                    format!("{} {}", first, last)
+                } else if !last.is_empty() { last.clone() } else { first.clone() };
+
+                if seen_names.contains(&full_name) { continue; }
+
+                // Valid person! Read their data
+                let nationality = if let Ok(nat_ptr) = memory::read_ptr(handle, person_base + parser::PERSON_NATIONALITY_OFFSET) {
+                    if nat_ptr > 0x10000 { memory::read_fm_string(handle, nat_ptr + parser::NATION_NAME_OFFSET) }
+                    else { String::new() }
+                } else { String::new() };
+
+                let dob_raw = memory::read_u32(handle, person_base + parser::PERSON_BIRTH_DATE_OFFSET).unwrap_or(0);
+                let (birth_year, _) = parser::decode_fm_date(dob_raw);
+                let age = if birth_year >= 1960 && birth_year <= 2010 && game_year >= birth_year {
+                    (game_year - birth_year) as u8
+                } else { 0 };
+
+                // Probe for coaching attributes: search the object for a block of 8+ bytes in 1-20 range
+                // that isn't the personality block (at person+0x70)
+                let mut coaching = CoachingAttrs::default();
+                let personality_base = person_base + 0x70;
+
+                // Strategy: read 256 bytes before and after person base, look for 8+ consecutive 1-20 bytes
+                for search_base in [ptr, person_base.wrapping_sub(256)] {
+                    if let Ok(chunk) = memory::read_memory(handle, search_base, 512) {
+                        let mut best_run_start = 0usize;
+                        let mut best_run_len = 0usize;
+                        let mut run_start = 0usize;
+                        let mut run_len = 0usize;
+
+                        for (i, &b) in chunk.iter().enumerate() {
+                            let abs_addr = search_base + i;
+                            if abs_addr >= personality_base && abs_addr < personality_base + 8 {
+                                run_len = 0; continue;
+                            }
+                            if b >= 1 && b <= 20 {
+                                if run_len == 0 { run_start = i; }
+                                run_len += 1;
+                                if run_len > best_run_len {
+                                    best_run_len = run_len;
+                                    best_run_start = run_start;
+                                }
+                            } else {
+                                run_len = 0;
+                            }
+                        }
+
+                        if best_run_len >= 8 {
+                            let s = best_run_start;
+                            coaching.attacking    = chunk.get(s).copied().unwrap_or(0);
+                            coaching.defending    = chunk.get(s + 1).copied().unwrap_or(0);
+                            coaching.fitness      = chunk.get(s + 2).copied().unwrap_or(0);
+                            coaching.goalkeeping  = chunk.get(s + 3).copied().unwrap_or(0);
+                            coaching.mental       = chunk.get(s + 4).copied().unwrap_or(0);
+                            coaching.tactical     = chunk.get(s + 5).copied().unwrap_or(0);
+                            coaching.technical    = chunk.get(s + 6).copied().unwrap_or(0);
+                            coaching.working_with_youngsters = chunk.get(s + 7).copied().unwrap_or(0);
+                            if best_run_len >= 12 {
+                                coaching.determination    = chunk.get(s + 8).copied().unwrap_or(0);
+                                coaching.discipline       = chunk.get(s + 9).copied().unwrap_or(0);
+                                coaching.man_management   = chunk.get(s + 10).copied().unwrap_or(0);
+                                coaching.motivating       = chunk.get(s + 11).copied().unwrap_or(0);
+                            }
+                            if best_run_len >= 14 {
+                                coaching.judging_ability   = chunk.get(s + 12).copied().unwrap_or(0);
+                                coaching.judging_potential = chunk.get(s + 13).copied().unwrap_or(0);
+                            }
+                            log::info!("Staff {} coaching candidate at offset {}: {:?}",
+                                full_name, search_base + best_run_start, coaching);
+                            break;
+                        }
+                    }
+                }
+
+                seen_names.insert(full_name.clone());
+                vec_has_staff = true;
+                staff.push(StaffMember {
+                    name: full_name,
+                    age,
+                    nationality,
+                    team_name: team_label.to_string(),
+                    coaching,
+                });
+                break; // found person at this offset
+            }
+        }
+        if vec_has_staff {
+            log::info!("Staff vector found at team+0x{:X} ({} staff for {})", vec_off, staff.len(), team_label);
+        }
+    }
+
+    staff
+}
+
+/// Probe club struct for facility values (6 fields, each 1-20).
+fn probe_club_facilities(handle: HANDLE, club_ptr: usize) -> Option<ClubFacilities> {
+    if club_ptr < 0x10000 { return None; }
+
+    // Facilities are stored as bytes 1-20 in the club struct.
+    // Read a large chunk and look for blocks of 4-6 bytes all in 1-20 range
+    // that are away from the name strings (0xC0-0xD0).
+    let chunk = memory::read_memory(handle, club_ptr, 1024).ok()?;
+
+    let mut best_start = 0usize;
+    let mut best_len = 0usize;
+
+    for i in 0..chunk.len() {
+        // Skip name pointer area
+        if i >= 0xB0 && i <= 0xD8 { continue; }
+
+        let mut run = 0usize;
+        while i + run < chunk.len() && chunk[i + run] >= 1 && chunk[i + run] <= 20 {
+            run += 1;
+            if run > 20 { break; }
+        }
+        if run >= 4 && run <= 12 && run > best_len {
+            best_len = run;
+            best_start = i;
+        }
+    }
+
+    if best_len >= 4 {
+        let fac = ClubFacilities {
+            corporate:         chunk.get(best_start).copied().unwrap_or(0),
+            training:          chunk.get(best_start + 1).copied().unwrap_or(0),
+            youth_facilities:  chunk.get(best_start + 2).copied().unwrap_or(0),
+            junior_coaching:   chunk.get(best_start + 3).copied().unwrap_or(0),
+            youth_recruitment: chunk.get(best_start + 4).copied().unwrap_or(0),
+            youth_importance:  chunk.get(best_start + 5).copied().unwrap_or(0),
+        };
+        log::info!("Club facilities candidate at club+0x{:X}: {:?}", best_start, fac);
+        Some(fac)
+    } else {
+        None
+    }
+}
+
+#[tauri::command]
+pub async fn get_staff_data(state: State<'_, AppState>) -> Result<Vec<StaffMember>, String> {
+    Ok(state.staff.lock().unwrap().clone())
+}
+
+#[tauri::command]
+pub async fn get_club_facilities(state: State<'_, AppState>) -> Result<Option<ClubFacilities>, String> {
+    Ok(state.club_facilities.lock().unwrap().clone())
 }

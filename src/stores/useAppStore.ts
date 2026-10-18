@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import type { Player, GameInfo, LoadProgress, ManagerProfile, YouthTeam } from "@/types/player";
+import type { Player, GameInfo, LoadProgress, ManagerProfile, YouthTeam, StaffMember, ClubFacilities } from "@/types/player";
 import { generateAIDatabase } from "@/utils/aiBrief";
 
 type Page = "dashboard" | "players" | "squad" | "transfers" | "compare" | "shortlists" | "national" | "youth" | "settings";
@@ -21,6 +21,8 @@ interface AppStore {
   managerProfile: ManagerProfile | null;
   squadIds: Set<number>;
   youthTeams: YouthTeam[];
+  staff: StaffMember[];
+  clubFacilities: ClubFacilities | null;
 
   // Filters
   minCA: number | null;
@@ -86,6 +88,8 @@ async function doLoad(set: (s: Partial<AppStore>) => void, get: () => AppStore) 
     const profile = await invoke<ManagerProfile | null>("get_manager_profile");
     const squadIdArr = await invoke<number[]>("get_squad_ids");
     const youthTeams = await invoke<YouthTeam[]>("get_youth_teams").catch(() => [] as YouthTeam[]);
+    const staff = await invoke<StaffMember[]>("get_staff_data").catch(() => [] as StaffMember[]);
+    const clubFacilities = await invoke<ClubFacilities | null>("get_club_facilities").catch(() => null);
     set({
       players,
       loading: false,
@@ -93,6 +97,8 @@ async function doLoad(set: (s: Partial<AppStore>) => void, get: () => AppStore) 
       managerProfile: profile,
       squadIds: new Set(squadIdArr),
       youthTeams,
+      staff,
+      clubFacilities,
     });
 
     // Hydrate shortlist against fresh player data — fixes stale
@@ -146,6 +152,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
   managerProfile: null,
   squadIds: new Set(),
   youthTeams: [],
+  staff: [],
+  clubFacilities: null,
   minCA: null,
   maxCA: null,
   minPA: null,
@@ -178,7 +186,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     await invoke("disconnect_fm");
     set({
       connected: false, gameInfo: null, players: [], selectedPlayer: null,
-      managerProfile: null, squadIds: new Set(), youthTeams: [],
+      managerProfile: null, squadIds: new Set(), youthTeams: [], staff: [], clubFacilities: null,
     });
   },
 

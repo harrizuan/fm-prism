@@ -1269,3 +1269,80 @@ export function analyzeLeague(players: Player[], leagueName: string): ClubAnalys
     })
     .sort((a, b) => b.avgCA - a.avgCA);
 }
+
+// ──────────────────────────────────────
+// Staff & Facilities types (from memory)
+// ──────────────────────────────────────
+
+export interface CoachingAttrs {
+  attacking: number;
+  defending: number;
+  fitness: number;
+  goalkeeping: number;
+  mental: number;
+  tactical: number;
+  technical: number;
+  working_with_youngsters: number;
+  determination: number;
+  discipline: number;
+  man_management: number;
+  motivating: number;
+  judging_ability: number;
+  judging_potential: number;
+}
+
+export interface StaffMember {
+  name: string;
+  age: number;
+  nationality: string;
+  team_name: string;
+  coaching: CoachingAttrs;
+}
+
+export interface ClubFacilities {
+  training: number;
+  youth_facilities: number;
+  junior_coaching: number;
+  youth_recruitment: number;
+  corporate: number;
+  youth_importance: number;
+}
+
+/** Is the coaching attrs block populated (at least 4 non-zero values) */
+export function hasCoachingData(c: CoachingAttrs): boolean {
+  const vals = [c.attacking, c.defending, c.fitness, c.goalkeeping,
+    c.mental, c.tactical, c.technical, c.working_with_youngsters];
+  return vals.filter(v => v > 0).length >= 4;
+}
+
+/** Sum of the 8 core coaching attributes */
+export function coachingTotal(c: CoachingAttrs): number {
+  return c.attacking + c.defending + c.fitness + c.goalkeeping +
+    c.mental + c.tactical + c.technical + c.working_with_youngsters;
+}
+
+/** Star rating equivalent (1-5) for a coaching attribute */
+export function coachingStars(value: number): number {
+  if (value >= 18) return 5;
+  if (value >= 15) return 4;
+  if (value >= 12) return 3;
+  if (value >= 8)  return 2;
+  return 1;
+}
+
+/** Whether a staff member is strong for youth development */
+export function isYouthSpecialist(s: StaffMember): boolean {
+  return s.coaching.working_with_youngsters >= 14 &&
+    (s.coaching.determination >= 12 || s.coaching.motivating >= 12);
+}
+
+/** Facility quality label */
+export function facilityLabel(value: number): string {
+  if (value >= 18) return "World Class";
+  if (value >= 15) return "Superb";
+  if (value >= 12) return "Great";
+  if (value >= 9)  return "Good";
+  if (value >= 6)  return "Average";
+  if (value >= 3)  return "Basic";
+  return "Poor";
+}

@@ -4,10 +4,11 @@ import {
   displayName, formatValue, formatWage, bestRoles, bestFormationFit,
   playerAthletics, playerHiddenMentals,
   estimateCAPerYear, projectCAAtAge, mentoringUrgency, trainingPlan, developmentAction,
+  hasCoachingData, coachingStars, facilityLabel, isYouthSpecialist,
 } from "@/types/player";
 import { generateAIDatabase } from "@/utils/aiBrief";
-import type { Player, YouthTeam, MentoringAlert, DevelopmentAdvice } from "@/types/player";
-import { Download, TrendingUp, Zap, Trophy, AlertTriangle, ArrowUpRight, Shield, GraduationCap } from "lucide-react";
+import type { Player, YouthTeam, MentoringAlert, DevelopmentAdvice, StaffMember, ClubFacilities } from "@/types/player";
+import { Download, TrendingUp, Zap, Trophy, AlertTriangle, ArrowUpRight, Shield, GraduationCap, Users, Building2 } from "lucide-react";
 import { PlayerDetail } from "@/components/player/PlayerDetail";
 
 function caClass(ca: number) {
@@ -41,11 +42,17 @@ function gradeColor(grade: string) {
   return grade === "A" ? "text-emerald-400" : grade === "B" ? "text-sky-400"
     : grade === "C" ? "text-amber-400" : "text-red-400";
 }
+function staffAttrColor(v: number) {
+  return v >= 16 ? "bg-emerald-600" : v >= 12 ? "bg-sky-600" : v >= 8 ? "bg-amber-600" : v >= 4 ? "bg-red-600" : "bg-zinc-700";
+}
+function facColor(v: number) {
+  return v >= 15 ? "text-emerald-400" : v >= 10 ? "text-sky-400" : v >= 6 ? "text-amber-400" : "text-red-400";
+}
 
 type SortKey = "ca" | "pa" | "gap" | "age" | "cayr" | "name" | "pos" | "value" | "pro" | "action";
 
 export function YouthPage() {
-  const { players, squadIds, managerProfile, youthTeams, setCurrentPage, toggleShortlist, shortlist, setSelectedPlayer, selectedPlayer } = useAppStore();
+  const { players, squadIds, managerProfile, youthTeams, staff, clubFacilities, setCurrentPage, toggleShortlist, shortlist, setSelectedPlayer, selectedPlayer } = useAppStore();
   const [activeTeam, setActiveTeam] = useState<string>("all");
   const [sortKey, setSortKey] = useState<SortKey>("pa");
   const [sortAsc, setSortAsc] = useState(false);
@@ -548,6 +555,95 @@ export function YouthPage() {
                     <span className={`font-mono ${devColor(m.mental.determination)}`}>Det {m.mental.determination}</span>
                   </div>
                 ))}
+              </div>
+            )}
+
+            {/* Club Facilities */}
+            {clubFacilities && (
+              <div className="bg-zinc-900/60 rounded-lg border border-zinc-800/50 p-3 space-y-2">
+                <p className="text-[10px] font-semibold text-amber-400 flex items-center gap-1">
+                  <Building2 size={10} /> Club Facilities
+                </p>
+                <p className="text-[9px] text-zinc-600 italic">Affects youth intake quality & development rate</p>
+                {[
+                  ["Training", clubFacilities.training],
+                  ["Youth Facilities", clubFacilities.youth_facilities],
+                  ["Jr Coaching", clubFacilities.junior_coaching],
+                  ["Youth Recruitment", clubFacilities.youth_recruitment],
+                  ["Corporate", clubFacilities.corporate],
+                  ["Youth Importance", clubFacilities.youth_importance],
+                ].map(([label, val]) => {
+                  const v = val as number;
+                  return (
+                    <div key={label as string} className="flex items-center justify-between text-[10px]">
+                      <span className="text-zinc-500">{label as string}</span>
+                      <div className="flex items-center gap-1.5">
+                        <div className="w-16 h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                          <div className={`h-full rounded-full ${staffAttrColor(v)}`} style={{ width: `${(v / 20) * 100}%` }} />
+                        </div>
+                        <span className={`font-mono w-5 text-right ${facColor(v)}`}>{v || "?"}</span>
+                        <span className="text-zinc-600 text-[9px] w-14 text-right">{v ? facilityLabel(v) : ""}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Coaching Staff */}
+            {staff.length > 0 && (
+              <div className="bg-zinc-900/60 rounded-lg border border-zinc-800/50 p-3 space-y-2">
+                <p className="text-[10px] font-semibold text-amber-400 flex items-center gap-1">
+                  <Users size={10} /> Coaching Staff ({staff.length})
+                </p>
+                <p className="text-[9px] text-zinc-600 italic">
+                  {staff.filter(s => isYouthSpecialist(s)).length > 0
+                    ? `${staff.filter(s => isYouthSpecialist(s)).length} youth specialist${staff.filter(s => isYouthSpecialist(s)).length !== 1 ? "s" : ""}`
+                    : "No youth specialists found"}
+                </p>
+                <div className="space-y-1.5">
+                  {staff.map((s, i) => {
+                    const hasData = hasCoachingData(s.coaching);
+                    const youthSpec = isYouthSpecialist(s);
+                    return (
+                      <div key={`${s.name}-${i}`} className={`text-[10px] p-1.5 rounded ${youthSpec ? "bg-emerald-950/30 border border-emerald-800/30" : "bg-zinc-800/30"}`}>
+                        <div className="flex items-center justify-between mb-0.5">
+                          <span className={`font-medium ${youthSpec ? "text-emerald-300" : "text-zinc-300"}`}>
+                            {s.name}
+                            {youthSpec && <span className="ml-1 text-[8px] text-emerald-500">★ YOUTH</span>}
+                          </span>
+                          <span className="text-zinc-600">{s.age > 0 ? `${s.age}y` : ""} {s.nationality}</span>
+                        </div>
+                        {s.team_name && <p className="text-[9px] text-zinc-600 mb-0.5">{s.team_name}</p>}
+                        {hasData && (
+                          <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 mt-1">
+                            {[
+                              ["Att", s.coaching.attacking],
+                              ["Def", s.coaching.defending],
+                              ["Fit", s.coaching.fitness],
+                              ["GK", s.coaching.goalkeeping],
+                              ["Men", s.coaching.mental],
+                              ["Tac", s.coaching.tactical],
+                              ["Tec", s.coaching.technical],
+                              ["WwY", s.coaching.working_with_youngsters],
+                            ].map(([label, val]) => {
+                              const v = val as number;
+                              return (
+                                <div key={label as string} className="flex items-center gap-1">
+                                  <span className="text-zinc-600 w-5">{label as string}</span>
+                                  <div className="flex-1 h-1 bg-zinc-800 rounded-full overflow-hidden">
+                                    <div className={`h-full rounded-full ${staffAttrColor(v)}`} style={{ width: `${(v / 20) * 100}%` }} />
+                                  </div>
+                                  <span className={`font-mono w-4 text-right ${devColor(v)}`}>{v}</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             )}
 

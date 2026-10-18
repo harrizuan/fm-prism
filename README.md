@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/FM_Prism-v0.5.0-00ff88?style=for-the-badge&labelColor=18181b" />
+  <img src="https://img.shields.io/badge/FM_Prism-v0.6.0-00ff88?style=for-the-badge&labelColor=18181b" />
   <img src="https://img.shields.io/badge/FM26-Windows-0ea5e9?style=for-the-badge&labelColor=18181b" />
   <img src="https://img.shields.io/badge/Tauri_2-Rust_+_React-f97316?style=for-the-badge&labelColor=18181b" />
   <img src="https://img.shields.io/badge/License-MIT-a855f7?style=for-the-badge&labelColor=18181b" />
@@ -269,6 +269,17 @@ This project would not exist without the work of these people and communities:
 ---
 
 ## Changelog
+
+### v0.6.0 — Coaching Staff & Facilities Probing (Oct 2026)
+
+- **NEW**: **Staff probing system** — probes the team struct for coaching staff vectors, finds person-like objects that are NOT players, reads names/age/nationality
+- **NEW**: **Coaching attribute probing** — for each staff member, searches their object memory for blocks of 8+ consecutive bytes in 1-20 range (candidate coaching attributes: Attacking, Defending, Fitness, GK, Mental, Tactical, Technical, Working with Youngsters)
+- **NEW**: **Club facilities probing** — probes the club struct for facility values (Training, Youth Facilities, Junior Coaching, Youth Recruitment, Corporate, Youth Importance) with bar charts and quality labels
+- **NEW**: **Coaching Staff panel** in Youth page right sidebar — displays all found staff with mini attribute bar charts, highlights youth specialists (WwY ≥14 + Det/Mot ≥12)
+- **NEW**: **Club Facilities card** in Youth page — shows all 6 facility values with progress bars and quality labels (Poor → World Class)
+- **NEW**: TypeScript types for `StaffMember`, `CoachingAttrs`, `ClubFacilities` with helper functions (`hasCoachingData`, `coachingStars`, `facilityLabel`, `isYouthSpecialist`)
+- **NEW**: Backend Tauri commands `get_staff_data` and `get_club_facilities` — fetched automatically on scan
+- **NOTE**: Staff coaching attributes are **exploratory** — the offset probing may find candidate blocks that need validation against in-game values. Staff names and nationality are reliable since they share the Person base with players.
 
 ### v0.5.0 — Youth Development Engine (Oct 2026)
 
