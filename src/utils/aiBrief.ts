@@ -3,6 +3,7 @@ import {
   displayName, formatValue, formatWage,
   bestRoles, bestFormationFit, playerAthletics, playerHiddenMentals,
   calculateFeasibility, analyzeSquadNeeds, analyzeLeague,
+  estimateCAPerYear, projectCAAtAge, developmentAction,
 } from "@/types/player";
 
 const DB_DIR = "C:\\Users\\User\\Downloads\\0.footballmanager\\fm-db";
@@ -186,7 +187,7 @@ export async function generateAIDatabase(
       "Agg", "Ant", "Bra", "Cmp", "Cnt", "Dec", "Det", "Fla", "Lea", "OtB", "Pos", "Tea", "Vis", "Wor",
       "Acc", "Agi", "Bal", "Jum", "NF", "Pac", "Sta", "Str",
       "Con", "Pre", "Imp", "Pro", "Dir", "Inj", "Tem", "Amb",
-      "DevScore", "Growth",
+      "DevScore", "Growth", "CAyr", "CA3yr", "Action",
     ].join("\t");
 
     const youthPlayers = players.filter(p => youthIds.has(p.id)).sort((a, b) => b.potential_ability - a.potential_ability);
@@ -197,10 +198,10 @@ export async function generateAIDatabase(
       const t = p.technical, m = p.mental, ph = p.physical, h = p.hidden;
       const gap = p.potential_ability - p.current_ability;
       const devSc = (h.professionalism ?? 0) * 2 + (m.determination ?? 0);
-      const pro = h.professionalism ?? 10;
-      const det = m.determination ?? 10;
-      const rate = (pro >= 14 ? 12 : pro >= 10 ? 9 : 7) + (det >= 14 ? 3 : det >= 10 ? 1 : 0);
-      const growth = gap > 0 ? `~${rate}CA/yr` : "Peaked";
+      const cayr = estimateCAPerYear(p);
+      const ca3 = projectCAAtAge(p, p.age + 3);
+      const act = developmentAction(p, mp.squad_avg_ca ?? 80);
+      const growth = gap > 0 ? `${cayr.toFixed(1)}CA/yr` : "Peaked";
 
       const teamName = youthTeams.find(yt => yt.player_ids.includes(p.id))?.name
         ?? (p.age <= 17 ? "U18/Youth" : "U21/Reserve");
@@ -217,7 +218,7 @@ export async function generateAIDatabase(
         ph.acceleration, ph.agility, ph.balance, ph.jumping, ph.natural_fitness, ph.pace, ph.stamina, ph.strength,
         h.consistency, h.pressure, h.important_matches, h.professionalism, h.dirtiness,
         h.injury_proneness, h.temperament, h.ambition,
-        devSc, growth,
+        devSc, growth, cayr.toFixed(1), ca3, act.label,
       ].join("\t");
     });
 

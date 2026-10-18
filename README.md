@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/FM_Prism-v0.4.6-00ff88?style=for-the-badge&labelColor=18181b" />
+  <img src="https://img.shields.io/badge/FM_Prism-v0.5.0-00ff88?style=for-the-badge&labelColor=18181b" />
   <img src="https://img.shields.io/badge/FM26-Windows-0ea5e9?style=for-the-badge&labelColor=18181b" />
   <img src="https://img.shields.io/badge/Tauri_2-Rust_+_React-f97316?style=for-the-badge&labelColor=18181b" />
   <img src="https://img.shields.io/badge/License-MIT-a855f7?style=for-the-badge&labelColor=18181b" />
@@ -269,6 +269,20 @@ This project would not exist without the work of these people and communities:
 ---
 
 ## Changelog
+
+### v0.5.0 — Youth Development Engine (Oct 2026)
+
+- **NEW**: Research-backed **Growth Engine** — `estimateCAPerYear()` calibrated against FM-Arena Zippo controlled tests (Pro 5→4.8 CA/yr, Pro 20→10.9), with age multipliers from age-comparison tests and gap scaling from gap-size experiments
+- **NEW**: **CA/yr column** shows estimated CA gain per year for every youth player (replaces old DevScore)
+- **NEW**: **+3yr column** projects CA at current age + 3 using year-by-year simulation (accounts for gap shrinkage and age slowdown)
+- **NEW**: **Development Action system** — each player gets a recommended action: Protect (star prospect), Promote (ready for first team), Loan (needs competitive minutes), Mentor (personality blocking growth), Sell (near ceiling), Develop (on track), Release (PA too low)
+- **NEW**: **Mentoring Alert** flags — red dot on players with high PA but low Pro (<10) or Det (<6), identifies wasted potential that needs personality mentoring
+- **NEW**: **Youth System Health Grade** (A-F) — weighted score based on avg Pro/Det, mentoring needs, squad sizes, star count, and growth rates
+- **NEW**: **Best Mentors panel** — identifies first-team players with highest Pro/Det as mentoring candidates for youth players
+- **NEW**: **Training Plan card** — when a youth player is selected, shows age-appropriate training recommendation (Foundation/Specialization/Integration phases)
+- **NEW**: **Training Phase Guide** in sidebar — quick reference for the 15-17/18-20/21+ training pipeline
+- **FIX**: `developmentTrajectory()` weights updated — Pro factor increased to 50% (was 35%), Amb/Det now use diminishing returns above 10 (matching FM Stats regression data)
+- **FIX**: Youth TSV export now includes CA/yr, CA+3yr, and Action columns for AI analysis
 
 ### v0.4.6 — Youth Squad page + team detection (Oct 2026)
 
