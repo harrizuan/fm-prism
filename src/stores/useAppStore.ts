@@ -4,7 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import type { Player, GameInfo, LoadProgress, ManagerProfile, YouthTeam, StaffMember, ClubFacilities } from "@/types/player";
 import { generateAIDatabase } from "@/utils/aiBrief";
 
-type Page = "dashboard" | "players" | "squad" | "transfers" | "compare" | "shortlists" | "national" | "youth" | "settings";
+type Page = "dashboard" | "players" | "squad" | "transfers" | "compare" | "shortlists" | "national" | "youth" | "staff" | "settings";
 
 interface AppStore {
   connected: boolean;

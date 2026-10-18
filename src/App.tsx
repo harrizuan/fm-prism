@@ -3,6 +3,7 @@ import { DashboardPage } from "@/pages/DashboardPage";
 import { PlayersPage } from "@/pages/PlayersPage";
 import { SquadPage } from "@/pages/SquadPage";
 import { YouthPage } from "@/pages/YouthPage";
+import { StaffPage } from "@/pages/StaffPage";
 import { TransfersPage } from "@/pages/TransfersPage";
 import { ComparePage } from "@/pages/ComparePage";
 import { ShortlistsPage } from "@/pages/ShortlistsPage";
@@ -21,6 +22,7 @@ function App() {
         {currentPage === "players" && <PlayersPage />}
         {currentPage === "squad" && <SquadPage />}
         {currentPage === "youth" && <YouthPage />}
+        {currentPage === "staff" && <StaffPage />}
         {currentPage === "transfers" && <TransfersPage />}
         {currentPage === "compare" && <ComparePage />}
         {currentPage === "shortlists" && <ShortlistsPage />}
