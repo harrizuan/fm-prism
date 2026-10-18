@@ -677,7 +677,11 @@ pub fn scan_for_players(app: AppHandle, state: State<'_, AppState>) -> Result<us
                             message: "Probing for coaching staff...".into(),
                         }).ok();
 
-                        let player_ptr_set: HashSet<usize> = player_ptrs.iter().cloned().collect();
+                        let player_ptr_set: HashSet<usize> = {
+                            let mut s: HashSet<usize> = player_ptrs.iter().cloned().collect();
+                            s.extend(wider_ptrs.iter());
+                            s
+                        };
                         let mut all_staff: Vec<StaffMember> = Vec::new();
 
                         // Probe first team for staff
@@ -1157,12 +1161,13 @@ fn probe_team_staff(
     let mut staff: Vec<StaffMember> = Vec::new();
     if team_ptr < 0x10000 { return staff; }
 
-    let player_person_offsets: [usize; 2] = [parser::PLAYER_PERSON_OFFSET, parser::HUMAN_PERSON_OFFSET];
     let mut seen_names: HashSet<String> = HashSet::new();
 
     // Probe team struct for vectors that contain person-like objects
     for vec_off in (0x40..0x200usize).step_by(8) {
         if vec_off == parser::TEAM_PLAYERS_START_OFFSET as usize { continue; }
+        // Also skip the players_end pointer offset
+        if vec_off == parser::TEAM_PLAYERS_END_OFFSET as usize { continue; }
         let vs = memory::read_ptr(handle, team_ptr + vec_off).unwrap_or(0);
         let ve = memory::read_ptr(handle, team_ptr + vec_off + 8).unwrap_or(0);
         if vs < 0x10000 || ve <= vs { continue; }
@@ -1177,17 +1182,61 @@ fn probe_team_staff(
             };
             if player_ptrs.contains(&ptr) { continue; }
 
-            // Try to parse as a person at known offsets
-            for &person_off in &player_person_offsets {
-                let person_base = if person_off == 0 { ptr } else {
-                    let pv = memory::read_ptr(handle, ptr + person_off).unwrap_or(0);
-                    if pv > 0x10000 && pv < 0x800_0000_0000 { pv } else { ptr + person_off }
-                };
+            // ── Check if this is a PLAYER (not staff) by reading CA/PA at player offsets ──
+            // Players have valid CA (1-200) and PA (1-200) at known offsets.
+            // Staff objects won't have meaningful values there.
+            let maybe_ca = memory::read_u16(handle, ptr + parser::PLAYER_CA_OFFSET).unwrap_or(0);
+            let maybe_pa = memory::read_u16(handle, ptr + parser::PLAYER_PA_OFFSET).unwrap_or(0);
+            if maybe_ca >= 1 && maybe_ca <= 200 && maybe_pa >= 1 && maybe_pa <= 200 {
+                // Also verify positions block looks like player positions (most are 1-20)
+                if let Ok(pos_data) = memory::read_memory(handle, ptr + parser::PLAYER_POSITIONS_OFFSET, 15) {
+                    let valid_pos = pos_data.iter().filter(|&&b| b >= 1 && b <= 20).count();
+                    if valid_pos >= 5 {
+                        log::debug!("Skipping player object at 0x{:X} (CA={} PA={}, {} valid positions)",
+                            ptr, maybe_ca, maybe_pa, valid_pos);
+                        continue; // This is a player, not staff
+                    }
+                }
+            }
 
+            // ── Try to find person data at the raw pointer (staff person is likely embedded) ──
+            // Staff objects have person data at a different layout than players.
+            // Try multiple strategies:
+            //   1. Person directly at ptr + small offsets (0, 0x10, 0x20, 0x30, 0x40, 0x50)
+            //   2. Person via pointer at ptr + known offsets
+            let candidate_person_bases: Vec<usize> = {
+                let mut bases = Vec::new();
+                // Strategy 1: Person embedded at small offsets
+                for off in (0..=0x80usize).step_by(0x10) {
+                    let candidate = ptr + off;
+                    let first = memory::read_fm_string(handle, candidate + parser::PERSON_FIRST_NAME_OFFSET);
+                    let last = memory::read_fm_string(handle, candidate + parser::PERSON_SECOND_NAME_OFFSET);
+                    if (!first.is_empty() && first.chars().any(|c| c.is_alphabetic()))
+                        || (!last.is_empty() && last.chars().any(|c| c.is_alphabetic())) {
+                        bases.push(candidate);
+                        break;
+                    }
+                }
+                // Strategy 2: Person via pointer at known player/manager offsets
+                for &poff in &[parser::PLAYER_PERSON_OFFSET, parser::HUMAN_PERSON_OFFSET] {
+                    if let Ok(pv) = memory::read_ptr(handle, ptr + poff) {
+                        if pv > 0x10000 && pv < 0x800_0000_0000 {
+                            let first = memory::read_fm_string(handle, pv + parser::PERSON_FIRST_NAME_OFFSET);
+                            let last = memory::read_fm_string(handle, pv + parser::PERSON_SECOND_NAME_OFFSET);
+                            if (!first.is_empty() && first.chars().any(|c| c.is_alphabetic()))
+                                || (!last.is_empty() && last.chars().any(|c| c.is_alphabetic())) {
+                                bases.push(pv);
+                            }
+                        }
+                    }
+                }
+                bases
+            };
+
+            for person_base in candidate_person_bases {
                 let first = memory::read_fm_string(handle, person_base + parser::PERSON_FIRST_NAME_OFFSET);
                 let last = memory::read_fm_string(handle, person_base + parser::PERSON_SECOND_NAME_OFFSET);
                 if first.is_empty() && last.is_empty() { continue; }
-                if !first.chars().any(|c| c.is_alphabetic()) && !last.chars().any(|c| c.is_alphabetic()) { continue; }
 
                 let full_name = if !first.is_empty() && !last.is_empty() {
                     format!("{} {}", first, last)
@@ -1195,7 +1244,6 @@ fn probe_team_staff(
 
                 if seen_names.contains(&full_name) { continue; }
 
-                // Valid person! Read their data
                 let nationality = if let Ok(nat_ptr) = memory::read_ptr(handle, person_base + parser::PERSON_NATIONALITY_OFFSET) {
                     if nat_ptr > 0x10000 { memory::read_fm_string(handle, nat_ptr + parser::NATION_NAME_OFFSET) }
                     else { String::new() }
@@ -1203,65 +1251,131 @@ fn probe_team_staff(
 
                 let dob_raw = memory::read_u32(handle, person_base + parser::PERSON_BIRTH_DATE_OFFSET).unwrap_or(0);
                 let (birth_year, _) = parser::decode_fm_date(dob_raw);
-                let age = if birth_year >= 1960 && birth_year <= 2010 && game_year >= birth_year {
+                let age = if birth_year >= 1940 && birth_year <= 2010 && game_year >= birth_year {
                     (game_year - birth_year) as u8
                 } else { 0 };
 
-                // Probe for coaching attributes: search the object for a block of 8+ bytes in 1-20 range
-                // that isn't the personality block (at person+0x70)
+                // ── Skip if age < 25 — very unlikely to be coaching staff ──
+                if age > 0 && age < 25 {
+                    log::debug!("Skipping {} age {} — too young for staff", full_name, age);
+                    continue;
+                }
+
+                // ── Probe for coaching attributes ──
+                // Search the object for ALL candidate blocks of 8+ bytes in 1-20 range,
+                // then pick the one that looks most like coaching attrs (good average, variance).
                 let mut coaching = CoachingAttrs::default();
                 let personality_base = person_base + 0x70;
 
-                // Strategy: read 256 bytes before and after person base, look for 8+ consecutive 1-20 bytes
-                for search_base in [ptr, person_base.wrapping_sub(256)] {
-                    if let Ok(chunk) = memory::read_memory(handle, search_base, 512) {
-                        let mut best_run_start = 0usize;
-                        let mut best_run_len = 0usize;
+                // Read a wide area around the object
+                let search_areas: Vec<(usize, usize)> = vec![
+                    (ptr, 768),
+                    (person_base.wrapping_sub(128), 512),
+                ];
+
+                let mut best_score = 0.0f64;
+
+                for (search_base, search_len) in search_areas {
+                    if search_base < 0x10000 { continue; }
+                    if let Ok(chunk) = memory::read_memory(handle, search_base, search_len) {
+                        // Find all runs of 8+ consecutive bytes in 1-20 range
+                        let mut runs: Vec<(usize, usize)> = Vec::new();
                         let mut run_start = 0usize;
                         let mut run_len = 0usize;
 
                         for (i, &b) in chunk.iter().enumerate() {
                             let abs_addr = search_base + i;
+                            // Skip known personality block
                             if abs_addr >= personality_base && abs_addr < personality_base + 8 {
-                                run_len = 0; continue;
+                                if run_len >= 8 { runs.push((run_start, run_len)); }
+                                run_len = 0;
+                                continue;
                             }
                             if b >= 1 && b <= 20 {
                                 if run_len == 0 { run_start = i; }
                                 run_len += 1;
-                                if run_len > best_run_len {
-                                    best_run_len = run_len;
-                                    best_run_start = run_start;
-                                }
                             } else {
+                                if run_len >= 8 { runs.push((run_start, run_len)); }
                                 run_len = 0;
                             }
                         }
+                        if run_len >= 8 { runs.push((run_start, run_len)); }
 
-                        if best_run_len >= 8 {
-                            let s = best_run_start;
-                            coaching.attacking    = chunk.get(s).copied().unwrap_or(0);
-                            coaching.defending    = chunk.get(s + 1).copied().unwrap_or(0);
-                            coaching.fitness      = chunk.get(s + 2).copied().unwrap_or(0);
-                            coaching.goalkeeping  = chunk.get(s + 3).copied().unwrap_or(0);
-                            coaching.mental       = chunk.get(s + 4).copied().unwrap_or(0);
-                            coaching.tactical     = chunk.get(s + 5).copied().unwrap_or(0);
-                            coaching.technical    = chunk.get(s + 6).copied().unwrap_or(0);
-                            coaching.working_with_youngsters = chunk.get(s + 7).copied().unwrap_or(0);
-                            if best_run_len >= 12 {
-                                coaching.determination    = chunk.get(s + 8).copied().unwrap_or(0);
-                                coaching.discipline       = chunk.get(s + 9).copied().unwrap_or(0);
-                                coaching.man_management   = chunk.get(s + 10).copied().unwrap_or(0);
-                                coaching.motivating       = chunk.get(s + 11).copied().unwrap_or(0);
+                        // Score each candidate run — pick the most "coaching-like" one
+                        for (rs, rl) in runs {
+                            let vals: Vec<u8> = (0..rl.min(14))
+                                .map(|k| chunk.get(rs + k).copied().unwrap_or(0))
+                                .collect();
+
+                            let avg = vals.iter().map(|&v| v as f64).sum::<f64>() / vals.len() as f64;
+                            let variance = vals.iter().map(|&v| {
+                                let d = v as f64 - avg;
+                                d * d
+                            }).sum::<f64>() / vals.len() as f64;
+
+                            // Count consecutive identical values (penalty for long streaks of 1s)
+                            let mut max_streak = 1usize;
+                            let mut cur_streak = 1usize;
+                            for k in 1..vals.len() {
+                                if vals[k] == vals[k - 1] { cur_streak += 1; max_streak = max_streak.max(cur_streak); }
+                                else { cur_streak = 1; }
                             }
-                            if best_run_len >= 14 {
-                                coaching.judging_ability   = chunk.get(s + 12).copied().unwrap_or(0);
-                                coaching.judging_potential = chunk.get(s + 13).copied().unwrap_or(0);
+
+                            // Count how many values are exactly 1
+                            let ones = vals.iter().filter(|&&v| v == 1).count();
+
+                            // Score: coaching attrs typically average 8-14, have moderate variance,
+                            // don't have long streaks of identical values, and few 1s
+                            let mut score = 0.0f64;
+                            // Prefer average in 7-15 range (coaching typical)
+                            if avg >= 7.0 && avg <= 15.0 { score += 30.0; }
+                            else if avg >= 5.0 && avg <= 17.0 { score += 15.0; }
+                            else if avg < 3.0 { score -= 20.0; }
+                            // Prefer moderate variance (not all same, not wild swings)
+                            if variance >= 2.0 && variance <= 30.0 { score += 20.0; }
+                            else if variance < 1.0 { score -= 10.0; }
+                            // Penalize long streaks of same value
+                            if max_streak >= 5 { score -= 30.0; }
+                            else if max_streak >= 3 { score -= 10.0; }
+                            // Penalize many 1s (unlikely for coaching attrs)
+                            score -= ones as f64 * 5.0;
+                            // Prefer runs of exactly 8-14 length (coaching has ~8-14 attrs)
+                            if rl >= 8 && rl <= 16 { score += 10.0; }
+                            // Prefer longer runs (more attrs found)
+                            score += rl.min(14) as f64 * 1.5;
+
+                            if score > best_score {
+                                best_score = score;
+                                let s = rs;
+                                coaching.attacking    = chunk.get(s).copied().unwrap_or(0);
+                                coaching.defending    = chunk.get(s + 1).copied().unwrap_or(0);
+                                coaching.fitness      = chunk.get(s + 2).copied().unwrap_or(0);
+                                coaching.goalkeeping  = chunk.get(s + 3).copied().unwrap_or(0);
+                                coaching.mental       = chunk.get(s + 4).copied().unwrap_or(0);
+                                coaching.tactical     = chunk.get(s + 5).copied().unwrap_or(0);
+                                coaching.technical    = chunk.get(s + 6).copied().unwrap_or(0);
+                                coaching.working_with_youngsters = chunk.get(s + 7).copied().unwrap_or(0);
+                                if rl >= 12 {
+                                    coaching.determination    = chunk.get(s + 8).copied().unwrap_or(0);
+                                    coaching.discipline       = chunk.get(s + 9).copied().unwrap_or(0);
+                                    coaching.man_management   = chunk.get(s + 10).copied().unwrap_or(0);
+                                    coaching.motivating       = chunk.get(s + 11).copied().unwrap_or(0);
+                                }
+                                if rl >= 14 {
+                                    coaching.judging_ability   = chunk.get(s + 12).copied().unwrap_or(0);
+                                    coaching.judging_potential = chunk.get(s + 13).copied().unwrap_or(0);
+                                }
+                                log::info!("Staff '{}' coaching candidate at 0x{:X}+{} (score={:.1}, avg={:.1}, var={:.1}, len={}, ones={}, streak={}): {:?}",
+                                    full_name, search_base, rs, score, avg, variance, rl, ones, max_streak, coaching);
                             }
-                            log::info!("Staff {} coaching candidate at offset {}: {:?}",
-                                full_name, search_base + best_run_start, coaching);
-                            break;
                         }
                     }
+                }
+
+                // Only keep coaching data if the best candidate scored well enough
+                if best_score < 20.0 {
+                    coaching = CoachingAttrs::default();
+                    log::info!("Staff '{}' — no good coaching candidate (best score {:.1})", full_name, best_score);
                 }
 
                 seen_names.insert(full_name.clone());
@@ -1273,7 +1387,7 @@ fn probe_team_staff(
                     team_name: team_label.to_string(),
                     coaching,
                 });
-                break; // found person at this offset
+                break; // found person at this base
             }
         }
         if vec_has_staff {
