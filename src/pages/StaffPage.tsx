@@ -122,6 +122,7 @@ export function StaffPage() {
   const [sortAsc, setSortAsc] = useState(false);
   const [filterClub, setFilterClub] = useState("");
   const [filterRole, setFilterRole] = useState("");
+  const [hideNoCoaching, setHideNoCoaching] = useState(true);
   const [selectedStaff, setSelectedStaff] = useState<StaffMember | null>(null);
 
   const clubs = useMemo(() => {
@@ -143,6 +144,7 @@ export function StaffPage() {
 
   const displayStaff = useMemo(() => {
     let list = staffWithRatings;
+    if (hideNoCoaching) list = list.filter(s => hasCoachingData(s.coaching));
     if (search) {
       const q = search.toLowerCase();
       list = list.filter(s => s.name.toLowerCase().includes(q) || s.team_name.toLowerCase().includes(q) || s.nationality.toLowerCase().includes(q));
@@ -182,7 +184,7 @@ export function StaffPage() {
       }
     });
     return sorted;
-  }, [staffWithRatings, search, filterClub, filterRole, sortKey, sortAsc]);
+  }, [staffWithRatings, search, filterClub, filterRole, sortKey, sortAsc, hideNoCoaching]);
 
   const toggleSort = (key: SortKey) => {
     if (sortKey === key) setSortAsc(!sortAsc);
@@ -234,7 +236,11 @@ export function StaffPage() {
             <option value="">All Roles</option>
             {STAFF_ROLES.map(r => <option key={r.short} value={r.short}>{r.label} (50%+)</option>)}
           </select>
-          <span className="text-[10px] text-zinc-600 ml-auto">{displayStaff.length} shown</span>
+          <button onClick={() => setHideNoCoaching(!hideNoCoaching)}
+            className={`text-[10px] px-2 py-1 rounded border transition-colors ${hideNoCoaching ? "bg-amber-500/20 border-amber-500/50 text-amber-400" : "bg-zinc-800 border-zinc-700 text-zinc-500"}`}>
+            {hideNoCoaching ? "Coaches Only" : "All Staff"}
+          </button>
+          <span className="text-[10px] text-zinc-600 ml-auto">{displayStaff.length} / {staff.length} shown</span>
         </div>
 
         {/* Table */}

@@ -499,9 +499,12 @@ pub fn find_staff_person_base(handle: HANDLE, staff_ptr: usize) -> Option<usize>
     }
 
     // Strategy 2: Person via pointer at staff + offset (like players at 0x288)
-    for test_off in (0x20..0x300usize).step_by(8) {
+    // Wider range: staff objects can have person pointers at various offsets
+    for test_off in (0x08..0x400usize).step_by(8) {
         let pv = memory::read_ptr(handle, staff_ptr + test_off).unwrap_or(0);
         if pv < 0x10000 || pv > 0x800_0000_0000 { continue; }
+        // Avoid self-reference or very nearby pointers (within the same object)
+        if pv == staff_ptr { continue; }
         let first = memory::read_fm_string(handle, pv + PERSON_FIRST_NAME_OFFSET);
         let last = memory::read_fm_string(handle, pv + PERSON_SECOND_NAME_OFFSET);
         if (!first.is_empty() && first.chars().any(|c| c.is_alphabetic()))
@@ -514,37 +517,53 @@ pub fn find_staff_person_base(handle: HANDLE, staff_ptr: usize) -> Option<usize>
 }
 
 /// Discover the staff vtable by reading the vtable pointer from a known staff object.
-/// Staff objects are found from the team struct at offsets we haven't used for players.
+/// Staff objects are found from the team/club struct. We verify candidates actually
+/// have coaching-attribute-like data (8+ consecutive bytes in 1-20 range) to avoid
+/// picking up generic person/contract/official vtables that lack coaching attrs.
 pub fn discover_staff_vtable(
     handle: HANDLE,
     team_ptr: usize,
+    club_ptr: usize,
     player_vtable: usize,
 ) -> Option<usize> {
-    if team_ptr < 0x10000 { return None; }
+    let search_targets: Vec<(&str, usize)> = {
+        let mut v = vec![("team", team_ptr)];
+        if club_ptr > 0x10000 && club_ptr != team_ptr { v.push(("club", club_ptr)); }
+        v
+    };
 
-    // Probe every vector in the team struct for objects with a different vtable than players
-    for vec_off in (0x40..0x200usize).step_by(8) {
-        if vec_off == TEAM_PLAYERS_START_OFFSET { continue; }
-        if vec_off == TEAM_PLAYERS_END_OFFSET as usize { continue; }
+    let mut candidate_vtables: Vec<(usize, String, usize, usize)> = Vec::new(); // (vt, label, vec_off, obj_ptr)
 
-        let vs = memory::read_ptr(handle, team_ptr + vec_off).unwrap_or(0);
-        let ve = memory::read_ptr(handle, team_ptr + vec_off + 8).unwrap_or(0);
-        if vs < 0x10000 || ve <= vs { continue; }
-        let count = (ve - vs) / 8;
-        if count == 0 || count > 50 { continue; }
+    for (label, base_ptr) in &search_targets {
+        if *base_ptr < 0x10000 { continue; }
 
-        for j in 0..count {
-            let ptr = match memory::read_ptr(handle, vs + j * 8) {
-                Ok(p) if p > 0x10000 && p < 0x800_0000_0000 => p,
-                _ => continue,
-            };
+        for vec_off in (0x08..0x400usize).step_by(8) {
+            if *label == "team" && (vec_off == TEAM_PLAYERS_START_OFFSET || vec_off == TEAM_PLAYERS_END_OFFSET as usize) {
+                continue;
+            }
 
-            let vt = memory::read_ptr(handle, ptr).unwrap_or(0);
-            if vt < 0x10000 || vt == player_vtable { continue; }
+            let vs = memory::read_ptr(handle, base_ptr + vec_off).unwrap_or(0);
+            let ve = memory::read_ptr(handle, base_ptr + vec_off + 8).unwrap_or(0);
+            if vs < 0x10000 || ve <= vs { continue; }
+            let count = (ve - vs) / 8;
+            if count == 0 || count > 200 { continue; }
 
-            // Check if this object has a valid person somewhere inside it
-            if find_staff_person_base(handle, ptr).is_some() {
-                // Also verify it does NOT have player CA/PA (players have valid CA 1-200)
+            for j in 0..count.min(10) {
+                let ptr = match memory::read_ptr(handle, vs + j * 8) {
+                    Ok(p) if p > 0x10000 && p < 0x800_0000_0000 => p,
+                    _ => continue,
+                };
+
+                let vt = memory::read_ptr(handle, ptr).unwrap_or(0);
+                if vt < 0x10000 || vt == player_vtable { continue; }
+                if candidate_vtables.iter().any(|(v, _, _, _)| *v == vt) { continue; }
+
+                let person_base = match find_staff_person_base(handle, ptr) {
+                    Some(pb) => pb,
+                    None => continue,
+                };
+
+                // Verify it does NOT have player CA/PA + positions
                 let maybe_ca = memory::read_u16(handle, ptr + PLAYER_CA_OFFSET).unwrap_or(0);
                 let maybe_pa = memory::read_u16(handle, ptr + PLAYER_PA_OFFSET).unwrap_or(0);
                 let has_player_pos = if let Ok(pos) = memory::read_memory(handle, ptr + PLAYER_POSITIONS_OFFSET, 15) {
@@ -552,14 +571,77 @@ pub fn discover_staff_vtable(
                 } else { false };
 
                 if has_player_pos && maybe_ca >= 1 && maybe_ca <= 200 && maybe_pa >= 1 && maybe_pa <= 200 {
-                    continue; // This is a player, not staff
+                    continue;
                 }
 
-                log::info!("Staff vtable discovered: 0x{:X} from team+0x{:X}[{}] (obj 0x{:X})",
-                    vt, vec_off, j, ptr);
-                return Some(vt);
+                // KEY CHECK: Verify this object has coaching-attribute-like data
+                // Search BOTH from the object start AND around the person base
+                // (coaching attrs may be stored near person, not near vtable)
+                let has_coaching = {
+                    let personality_base = person_base + 0x70;
+                    let search_areas: Vec<(usize, usize)> = vec![
+                        (ptr, 1024),
+                        (person_base.wrapping_sub(256), 768),
+                    ];
+                    let mut found = false;
+                    'outer: for (base, len) in search_areas {
+                        if base < 0x10000 { continue; }
+                        let chunk = match memory::read_memory(handle, base, len) {
+                            Ok(c) => c,
+                            Err(_) => continue,
+                        };
+                        let mut run_len = 0usize;
+                        let mut run_vals: Vec<u8> = Vec::new();
+                        for (i, &b) in chunk.iter().enumerate() {
+                            let abs = base + i;
+                            if abs >= personality_base && abs < personality_base + 8 {
+                                if run_len >= 8 {
+                                    let avg = run_vals.iter().map(|&v| v as f64).sum::<f64>() / run_vals.len() as f64;
+                                    let ones = run_vals.iter().filter(|&&v| v == 1).count();
+                                    if avg >= 4.0 && avg <= 18.0 && ones <= 3 { found = true; break 'outer; }
+                                }
+                                run_len = 0; run_vals.clear(); continue;
+                            }
+                            if b >= 1 && b <= 20 {
+                                run_len += 1; run_vals.push(b);
+                            } else {
+                                if run_len >= 8 {
+                                    let avg = run_vals.iter().map(|&v| v as f64).sum::<f64>() / run_vals.len() as f64;
+                                    let ones = run_vals.iter().filter(|&&v| v == 1).count();
+                                    if avg >= 4.0 && avg <= 18.0 && ones <= 3 { found = true; break 'outer; }
+                                }
+                                run_len = 0; run_vals.clear();
+                            }
+                        }
+                        if !found && run_len >= 8 {
+                            let avg = run_vals.iter().map(|&v| v as f64).sum::<f64>() / run_vals.len() as f64;
+                            let ones = run_vals.iter().filter(|&&v| v == 1).count();
+                            if avg >= 4.0 && avg <= 18.0 && ones <= 3 { found = true; }
+                        }
+                    }
+                    found
+                };
+
+                log::info!("Staff vtable candidate: 0x{:X} from {}+0x{:X}[{}] (obj 0x{:X}, has_coaching={})",
+                    vt, label, vec_off, j, ptr, has_coaching);
+
+                if has_coaching {
+                    log::info!("Staff vtable CONFIRMED: 0x{:X} — object has coaching attribute data", vt);
+                    return Some(vt);
+                }
+
+                candidate_vtables.push((vt, label.to_string(), vec_off, ptr));
             }
         }
     }
+
+    // No vtable had coaching data — log all candidates for debugging
+    if !candidate_vtables.is_empty() {
+        log::warn!("discover_staff_vtable: {} candidate vtables found but NONE had coaching data:", candidate_vtables.len());
+        for (vt, label, off, ptr) in &candidate_vtables {
+            log::warn!("  vtable 0x{:X} from {}+0x{:X} (obj 0x{:X})", vt, label, off, ptr);
+        }
+    }
+    log::warn!("discover_staff_vtable: no staff vtable found with coaching data");
     None
 }

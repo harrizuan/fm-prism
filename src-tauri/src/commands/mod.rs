@@ -679,7 +679,7 @@ pub fn scan_for_players(app: AppHandle, state: State<'_, AppState>) -> Result<us
 
                         let player_vtable = memory::read_ptr(handle, player_ptrs[0]).unwrap_or(0);
                         let staff_vtable = parser::discover_staff_vtable(
-                            handle, club_team.team_ptr, player_vtable
+                            handle, club_team.team_ptr, club_ptr, player_vtable
                         );
 
                         let mut all_staff: Vec<StaffMember> = Vec::new();
@@ -727,6 +727,7 @@ pub fn scan_for_players(app: AppHandle, state: State<'_, AppState>) -> Result<us
 
                             // Parse each staff candidate
                             let mut seen_ids: HashSet<u32> = HashSet::new();
+                            let mut seen_name_club: HashSet<String> = HashSet::new();
                             for (i, &sp) in staff_ptrs.iter().enumerate() {
                                 if i % 2000 == 0 && i > 0 {
                                     app.emit("load_progress", LoadProgress {
@@ -765,8 +766,8 @@ pub fn scan_for_players(app: AppHandle, state: State<'_, AppState>) -> Result<us
                                     (game_year - birth_year) as u8
                                 } else { 0 };
 
-                                // Skip likely-invalid entries
-                                if age == 0 { continue; }
+                                // Skip invalid or too-young entries (staff are almost always 25+)
+                                if age == 0 || age < 25 { continue; }
 
                                 // Read club/team from contract chain
                                 let team_name = {
@@ -781,6 +782,11 @@ pub fn scan_for_players(app: AppHandle, state: State<'_, AppState>) -> Result<us
                                         } else { String::new() }
                                     } else { String::new() }
                                 };
+
+                                // Dedup by name+club
+                                let dedup_key = format!("{}|{}", full_name, team_name);
+                                if seen_name_club.contains(&dedup_key) { continue; }
+                                seen_name_club.insert(dedup_key);
 
                                 // Probe for coaching attributes — search the staff object for
                                 // blocks of 8+ consecutive bytes in 1-20 range with good quality
@@ -798,15 +804,31 @@ pub fn scan_for_players(app: AppHandle, state: State<'_, AppState>) -> Result<us
                             log::info!("Parsed {} valid staff members from {} candidates",
                                 all_staff.len(), staff_ptrs.len());
 
-                        } else {
-                            log::warn!("Could not discover staff vtable — falling back to team probing");
+                            // If vtable scan got results but NONE have coaching data,
+                            // we likely found the wrong entity type — discard and fall through
+                            let has_any_coaching = all_staff.iter().any(|s| {
+                                let c = &s.coaching;
+                                [c.attacking, c.defending, c.fitness, c.goalkeeping,
+                                 c.tactical, c.technical, c.working_with_youngsters]
+                                    .iter().filter(|&&v| v > 0).count() >= 4
+                            });
+                            if !has_any_coaching && !all_staff.is_empty() {
+                                log::warn!("Vtable scan found {} entries but NONE have coaching data — wrong entity type, discarding",
+                                    all_staff.len());
+                                all_staff.clear();
+                            }
+                        }
+
+                        // Fallback: probe team/club struct vectors directly
+                        if all_staff.is_empty() {
+                            log::info!("Using team/club struct probing for staff...");
                             let player_ptr_set: HashSet<usize> = {
                                 let mut s: HashSet<usize> = player_ptrs.iter().cloned().collect();
                                 s.extend(wider_ptrs.iter());
                                 s
                             };
                             let first_team_staff = probe_team_staff(
-                                handle, club_team.team_ptr, &player_ptr_set, game_year, &club_name
+                                handle, club_team.team_ptr, club_ptr, &player_ptr_set, game_year, &club_name
                             );
                             all_staff.extend(first_team_staff);
                         }
@@ -1257,25 +1279,35 @@ pub async fn get_youth_teams(state: State<'_, AppState>) -> Result<Vec<YouthTeam
 fn probe_team_staff(
     handle: HANDLE,
     team_ptr: usize,
+    club_ptr: usize,
     player_ptrs: &HashSet<usize>,
     game_year: u16,
     team_label: &str,
 ) -> Vec<StaffMember> {
     let mut staff: Vec<StaffMember> = Vec::new();
-    if team_ptr < 0x10000 { return staff; }
-
     let mut seen_names: HashSet<String> = HashSet::new();
 
-    // Probe team struct for vectors that contain person-like objects
-    for vec_off in (0x40..0x200usize).step_by(8) {
-        if vec_off == parser::TEAM_PLAYERS_START_OFFSET as usize { continue; }
-        // Also skip the players_end pointer offset
-        if vec_off == parser::TEAM_PLAYERS_END_OFFSET as usize { continue; }
-        let vs = memory::read_ptr(handle, team_ptr + vec_off).unwrap_or(0);
-        let ve = memory::read_ptr(handle, team_ptr + vec_off + 8).unwrap_or(0);
-        if vs < 0x10000 || ve <= vs { continue; }
-        let count = (ve - vs) / 8;
-        if count == 0 || count > 50 { continue; }
+    // Search BOTH team and club structs for staff vectors
+    let search_targets: Vec<(&str, usize)> = {
+        let mut v = Vec::new();
+        if team_ptr > 0x10000 { v.push(("team", team_ptr)); }
+        if club_ptr > 0x10000 && club_ptr != team_ptr { v.push(("club", club_ptr)); }
+        v
+    };
+
+    for (label, base_ptr) in &search_targets {
+        // Probe struct for vectors that contain person-like objects
+        // Wider range: FM26 structs can be up to 0x400+
+        for vec_off in (0x08..0x400usize).step_by(8) {
+            if *label == "team" {
+                if vec_off == parser::TEAM_PLAYERS_START_OFFSET as usize { continue; }
+                if vec_off == parser::TEAM_PLAYERS_END_OFFSET as usize { continue; }
+            }
+            let vs = memory::read_ptr(handle, base_ptr + vec_off).unwrap_or(0);
+            let ve = memory::read_ptr(handle, base_ptr + vec_off + 8).unwrap_or(0);
+            if vs < 0x10000 || ve <= vs { continue; }
+            let count = (ve - vs) / 8;
+            if count == 0 || count > 200 { continue; }
 
         let mut vec_has_staff = false;
         for j in 0..count {
@@ -1359,7 +1391,7 @@ fn probe_team_staff(
                 } else { 0 };
 
                 // ── Skip if age < 25 — very unlikely to be coaching staff ──
-                if age > 0 && age < 25 {
+                if age == 0 || age < 25 {
                     log::debug!("Skipping {} age {} — too young for staff", full_name, age);
                     continue;
                 }
@@ -1494,8 +1526,9 @@ fn probe_team_staff(
             }
         }
         if vec_has_staff {
-            log::info!("Staff vector found at team+0x{:X} ({} staff for {})", vec_off, staff.len(), team_label);
+            log::info!("Staff vector found at {}+0x{:X} ({} staff for {})", label, vec_off, staff.len(), team_label);
         }
+    }
     }
 
     staff
