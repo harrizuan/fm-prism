@@ -71,6 +71,16 @@ pub const COMP_SHORT_NAME_OFFSET: usize = 0x48;       // 72 — indirect string 
 pub const NATION_NAME_OFFSET: usize = 0x30;            // 48 — FMSuperScout verified
 pub const NATION_SHORT_NAME_OFFSET: usize = 0x20;     // 32 — short name
 
+// --- Staff object offsets (probed) ---
+// Staff objects share Person base with players. Person is at a different offset
+// from the staff base vs player base. Staff also have coaching, knowledge, and
+// tactical preference attributes stored as raw 1-20 bytes.
+// The exact person offset within a staff object varies (not 0x288 like players).
+// We discover it by trying multiple candidates.
+pub const STAFF_PERSON_CANDIDATES: [usize; 8] = [
+    0x30, 0x38, 0x40, 0x48, 0x50, 0x58, 0x60, 0x68,
+];
+
 pub const SIGNATURE: &str = "48 8B 0D ?? ?? ?? ?? 48 8B 41 18 48 8B 49 20 48 29 C1 48 C1 F9 03 48 39 CE";
 
 /// FM26 attribute order within the 55-byte block at PLAYER_ATTRIBUTES_OFFSET
@@ -469,4 +479,87 @@ pub fn validate_player_data(p: &Player) -> bool {
     ].iter().filter(|&&v| v >= 1 && v <= 20).count();
 
     tech_valid >= 3
+}
+
+/// Try to find the person base from a staff object pointer.
+/// Staff objects embed person at a different offset than players.
+/// We try multiple strategies:
+///   1. Check if name strings appear at ptr + small offsets + person name offsets
+///   2. Follow pointers at known offsets to find an embedded person
+pub fn find_staff_person_base(handle: HANDLE, staff_ptr: usize) -> Option<usize> {
+    // Strategy 1: Person embedded directly at staff + small offset
+    for &off in &STAFF_PERSON_CANDIDATES {
+        let candidate = staff_ptr + off;
+        let first = memory::read_fm_string(handle, candidate + PERSON_FIRST_NAME_OFFSET);
+        let last = memory::read_fm_string(handle, candidate + PERSON_SECOND_NAME_OFFSET);
+        if (!first.is_empty() && first.chars().any(|c| c.is_alphabetic()))
+            || (!last.is_empty() && last.chars().any(|c| c.is_alphabetic())) {
+            return Some(candidate);
+        }
+    }
+
+    // Strategy 2: Person via pointer at staff + offset (like players at 0x288)
+    for test_off in (0x20..0x300usize).step_by(8) {
+        let pv = memory::read_ptr(handle, staff_ptr + test_off).unwrap_or(0);
+        if pv < 0x10000 || pv > 0x800_0000_0000 { continue; }
+        let first = memory::read_fm_string(handle, pv + PERSON_FIRST_NAME_OFFSET);
+        let last = memory::read_fm_string(handle, pv + PERSON_SECOND_NAME_OFFSET);
+        if (!first.is_empty() && first.chars().any(|c| c.is_alphabetic()))
+            || (!last.is_empty() && last.chars().any(|c| c.is_alphabetic())) {
+            return Some(pv);
+        }
+    }
+
+    None
+}
+
+/// Discover the staff vtable by reading the vtable pointer from a known staff object.
+/// Staff objects are found from the team struct at offsets we haven't used for players.
+pub fn discover_staff_vtable(
+    handle: HANDLE,
+    team_ptr: usize,
+    player_vtable: usize,
+) -> Option<usize> {
+    if team_ptr < 0x10000 { return None; }
+
+    // Probe every vector in the team struct for objects with a different vtable than players
+    for vec_off in (0x40..0x200usize).step_by(8) {
+        if vec_off == TEAM_PLAYERS_START_OFFSET { continue; }
+        if vec_off == TEAM_PLAYERS_END_OFFSET as usize { continue; }
+
+        let vs = memory::read_ptr(handle, team_ptr + vec_off).unwrap_or(0);
+        let ve = memory::read_ptr(handle, team_ptr + vec_off + 8).unwrap_or(0);
+        if vs < 0x10000 || ve <= vs { continue; }
+        let count = (ve - vs) / 8;
+        if count == 0 || count > 50 { continue; }
+
+        for j in 0..count {
+            let ptr = match memory::read_ptr(handle, vs + j * 8) {
+                Ok(p) if p > 0x10000 && p < 0x800_0000_0000 => p,
+                _ => continue,
+            };
+
+            let vt = memory::read_ptr(handle, ptr).unwrap_or(0);
+            if vt < 0x10000 || vt == player_vtable { continue; }
+
+            // Check if this object has a valid person somewhere inside it
+            if find_staff_person_base(handle, ptr).is_some() {
+                // Also verify it does NOT have player CA/PA (players have valid CA 1-200)
+                let maybe_ca = memory::read_u16(handle, ptr + PLAYER_CA_OFFSET).unwrap_or(0);
+                let maybe_pa = memory::read_u16(handle, ptr + PLAYER_PA_OFFSET).unwrap_or(0);
+                let has_player_pos = if let Ok(pos) = memory::read_memory(handle, ptr + PLAYER_POSITIONS_OFFSET, 15) {
+                    pos.iter().filter(|&&b| b >= 1 && b <= 20).count() >= 5
+                } else { false };
+
+                if has_player_pos && maybe_ca >= 1 && maybe_ca <= 200 && maybe_pa >= 1 && maybe_pa <= 200 {
+                    continue; // This is a player, not staff
+                }
+
+                log::info!("Staff vtable discovered: 0x{:X} from team+0x{:X}[{}] (obj 0x{:X})",
+                    vt, vec_off, j, ptr);
+                return Some(vt);
+            }
+        }
+    }
+    None
 }
