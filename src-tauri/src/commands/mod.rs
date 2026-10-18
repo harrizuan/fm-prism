@@ -5,7 +5,7 @@ use crate::models::*;
 use crate::parser;
 use windows::Win32::Foundation::HANDLE;
 use std::sync::Mutex;
-use std::collections::HashSet;
+use std::collections::{HashSet, HashMap};
 use tauri::{AppHandle, Emitter, State};
 
 pub struct AppState {
@@ -671,167 +671,71 @@ pub fn scan_for_players(app: AppHandle, state: State<'_, AppState>) -> Result<us
                             *state.youth_teams.lock().unwrap() = youth_teams_out;
                         }
 
-                        // Phase 4: Probe for coaching staff
+                        // Phase 4: Multi-club staff probing
+                        // Collect unique club pointers from ALL loaded players,
+                        // then probe each club's team/club struct for staff vectors
                         app.emit("load_progress", LoadProgress {
                             stage: "scanning".into(), current: 2, total: 3,
-                            message: "Discovering staff vtable...".into(),
+                            message: "Collecting clubs from players...".into(),
                         }).ok();
 
-                        let player_vtable = memory::read_ptr(handle, player_ptrs[0]).unwrap_or(0);
-                        let staff_vtable = parser::discover_staff_vtable(
-                            handle, club_team.team_ptr, club_ptr, player_vtable
-                        );
+                        let player_ptr_set: HashSet<usize> = {
+                            let mut s: HashSet<usize> = player_ptrs.iter().cloned().collect();
+                            s.extend(wider_ptrs.iter());
+                            s
+                        };
+
+                        // Collect unique (club_ptr → (team_ptr, club_name)) from player pointers
+                        let all_ptrs: Vec<usize> = {
+                            let mut v: Vec<usize> = player_ptrs.clone();
+                            v.extend(wider_ptrs.iter());
+                            v
+                        };
+                        let sample_step = (all_ptrs.len() / 3000).max(1);
+                        let mut club_map: HashMap<usize, (usize, String)> = HashMap::new();
+
+                        // Always include user's own club
+                        if club_ptr > 0x10000 {
+                            club_map.insert(club_ptr, (club_team.team_ptr, club_name.clone()));
+                        }
+
+                        for (idx, &pp) in all_ptrs.iter().enumerate() {
+                            if idx % sample_step != 0 { continue; }
+                            let person_p = memory::read_ptr(handle, pp + parser::PLAYER_PERSON_OFFSET).unwrap_or(0);
+                            if person_p < 0x10000 { continue; }
+                            let contract_p = memory::read_ptr(handle, person_p + parser::PERSON_CONTRACT_OFFSET).unwrap_or(0);
+                            if contract_p < 0x10000 { continue; }
+                            let team_p = memory::read_ptr(handle, contract_p + parser::CONTRACT_TEAM_OFFSET).unwrap_or(0);
+                            if team_p < 0x10000 { continue; }
+                            let club_p = memory::read_ptr(handle, team_p + parser::TEAM_CLUB_OFFSET).unwrap_or(0);
+                            if club_p < 0x10000 || club_map.contains_key(&club_p) { continue; }
+                            let cname = memory::read_fm_string(handle, club_p + parser::CLUB_NAME_OFFSET);
+                            if cname.is_empty() { continue; }
+                            club_map.insert(club_p, (team_p, cname));
+                        }
+
+                        log::info!("Phase 4: Found {} unique clubs from {} player pointers (sample step {})",
+                            club_map.len(), all_ptrs.len(), sample_step);
 
                         let mut all_staff: Vec<StaffMember> = Vec::new();
+                        let total_clubs = club_map.len();
 
-                        if let Some(svt) = staff_vtable {
-                            log::info!("Staff vtable: 0x{:X} — scanning for all staff...", svt);
-
-                            app.emit("load_progress", LoadProgress {
-                                stage: "scanning".into(), current: 2, total: 3,
-                                message: format!("Scanning for all staff (vtable 0x{:X})...", svt),
-                            }).ok();
-
-                            // Reuse the same regions we scanned for players
-                            let regions = memory::scan_private_regions(handle, 8 * 1024 * 1024 * 1024);
-                            let vtable_bytes = svt.to_le_bytes();
-                            let mut staff_ptrs: Vec<usize> = Vec::new();
-                            let mut scanned = 0usize;
-
-                            for &(region_base, region_size) in &regions {
-                                scanned += 1;
-                                if scanned % 200 == 0 {
-                                    app.emit("load_progress", LoadProgress {
-                                        stage: "scanning".into(),
-                                        current: scanned, total: regions.len(),
-                                        message: format!("Staff scan: region {}/{} — {} found",
-                                            scanned, regions.len(), staff_ptrs.len()),
-                                    }).ok();
-                                }
-                                if region_size < 8 { continue; }
-                                let data = match memory::read_memory(handle, region_base, region_size) {
-                                    Ok(d) => d,
-                                    Err(_) => continue,
-                                };
-                                let aligned_start = (8 - (region_base & 7)) & 7;
-                                let mut pos = aligned_start;
-                                while pos + 8 <= data.len() {
-                                    if data[pos..pos + 8] == vtable_bytes {
-                                        staff_ptrs.push(region_base + pos);
-                                    }
-                                    pos += 8;
-                                }
+                        for (ci, (&cp, (tp, cname))) in club_map.iter().enumerate() {
+                            if ci % 50 == 0 {
+                                app.emit("load_progress", LoadProgress {
+                                    stage: "scanning".into(),
+                                    current: ci, total: total_clubs,
+                                    message: format!("Probing club {}/{} — {} staff found",
+                                        ci, total_clubs, all_staff.len()),
+                                }).ok();
                             }
-
-                            log::info!("Staff vtable scan found {} candidates", staff_ptrs.len());
-
-                            // Parse each staff candidate
-                            let mut seen_ids: HashSet<u32> = HashSet::new();
-                            let mut seen_name_club: HashSet<String> = HashSet::new();
-                            for (i, &sp) in staff_ptrs.iter().enumerate() {
-                                if i % 2000 == 0 && i > 0 {
-                                    app.emit("load_progress", LoadProgress {
-                                        stage: "loading".into(),
-                                        current: all_staff.len(),
-                                        total: staff_ptrs.len(),
-                                        message: format!("Parsing staff {}/{}...", i, staff_ptrs.len()),
-                                    }).ok();
-                                }
-
-                                let person_base = match parser::find_staff_person_base(handle, sp) {
-                                    Some(pb) => pb,
-                                    None => continue,
-                                };
-
-                                let first = memory::read_fm_string(handle, person_base + parser::PERSON_FIRST_NAME_OFFSET);
-                                let last = memory::read_fm_string(handle, person_base + parser::PERSON_SECOND_NAME_OFFSET);
-                                if first.is_empty() && last.is_empty() { continue; }
-
-                                let uid = memory::read_u32(handle, sp + parser::ENTITY_UID_OFFSET).unwrap_or(0);
-                                if uid > 0 && seen_ids.contains(&uid) { continue; }
-                                if uid > 0 { seen_ids.insert(uid); }
-
-                                let full_name = if !first.is_empty() && !last.is_empty() {
-                                    format!("{} {}", first, last)
-                                } else if !last.is_empty() { last } else { first };
-
-                                let nationality = if let Ok(nat_ptr) = memory::read_ptr(handle, person_base + parser::PERSON_NATIONALITY_OFFSET) {
-                                    if nat_ptr > 0x10000 { memory::read_fm_string(handle, nat_ptr + parser::NATION_NAME_OFFSET) }
-                                    else { String::new() }
-                                } else { String::new() };
-
-                                let dob_raw = memory::read_u32(handle, person_base + parser::PERSON_BIRTH_DATE_OFFSET).unwrap_or(0);
-                                let (birth_year, _) = parser::decode_fm_date(dob_raw);
-                                let age = if birth_year >= 1940 && birth_year <= 2010 && game_year >= birth_year {
-                                    (game_year - birth_year) as u8
-                                } else { 0 };
-
-                                // Skip invalid or too-young entries (staff are almost always 25+)
-                                if age == 0 || age < 25 { continue; }
-
-                                // Read club/team from contract chain
-                                let team_name = {
-                                    let contract_ptr = memory::read_ptr(handle, person_base + parser::PERSON_CONTRACT_OFFSET).unwrap_or(0);
-                                    if contract_ptr > 0x10000 {
-                                        let team_ptr = memory::read_ptr(handle, contract_ptr + parser::CONTRACT_TEAM_OFFSET).unwrap_or(0);
-                                        if team_ptr > 0x10000 {
-                                            let club_p = memory::read_ptr(handle, team_ptr + parser::TEAM_CLUB_OFFSET).unwrap_or(0);
-                                            if club_p > 0x10000 {
-                                                memory::read_fm_string(handle, club_p + parser::CLUB_NAME_OFFSET)
-                                            } else { String::new() }
-                                        } else { String::new() }
-                                    } else { String::new() }
-                                };
-
-                                // Dedup by name+club
-                                let dedup_key = format!("{}|{}", full_name, team_name);
-                                if seen_name_club.contains(&dedup_key) { continue; }
-                                seen_name_club.insert(dedup_key);
-
-                                // Probe for coaching attributes — search the staff object for
-                                // blocks of 8+ consecutive bytes in 1-20 range with good quality
-                                let coaching = probe_coaching_attrs(handle, sp, person_base);
-
-                                all_staff.push(StaffMember {
-                                    name: full_name,
-                                    age,
-                                    nationality,
-                                    team_name,
-                                    coaching,
-                                });
-                            }
-
-                            log::info!("Parsed {} valid staff members from {} candidates",
-                                all_staff.len(), staff_ptrs.len());
-
-                            // If vtable scan got results but NONE have coaching data,
-                            // we likely found the wrong entity type — discard and fall through
-                            let has_any_coaching = all_staff.iter().any(|s| {
-                                let c = &s.coaching;
-                                [c.attacking, c.defending, c.fitness, c.goalkeeping,
-                                 c.tactical, c.technical, c.working_with_youngsters]
-                                    .iter().filter(|&&v| v > 0).count() >= 4
-                            });
-                            if !has_any_coaching && !all_staff.is_empty() {
-                                log::warn!("Vtable scan found {} entries but NONE have coaching data — wrong entity type, discarding",
-                                    all_staff.len());
-                                all_staff.clear();
-                            }
-                        }
-
-                        // Fallback: probe team/club struct vectors directly
-                        if all_staff.is_empty() {
-                            log::info!("Using team/club struct probing for staff...");
-                            let player_ptr_set: HashSet<usize> = {
-                                let mut s: HashSet<usize> = player_ptrs.iter().cloned().collect();
-                                s.extend(wider_ptrs.iter());
-                                s
-                            };
-                            let first_team_staff = probe_team_staff(
-                                handle, club_team.team_ptr, club_ptr, &player_ptr_set, game_year, &club_name
+                            let club_staff = probe_team_staff(
+                                handle, *tp, cp, &player_ptr_set, game_year, cname
                             );
-                            all_staff.extend(first_team_staff);
+                            all_staff.extend(club_staff);
                         }
+
+                        log::info!("Phase 4: Total staff from {} clubs: {}", total_clubs, all_staff.len());
 
                         // Probe club facilities
                         if club_ptr > 0x10000 {
