@@ -301,6 +301,12 @@ pub fn parse_player_at(handle: HANDLE, player_ptr: usize, game_year: u16) -> Opt
         p.height = height;
     }
 
+    // Weight in kg — typically stored 2 bytes after height
+    let weight = memory::read_u16(handle, player_ptr + PLAYER_HEIGHT_OFFSET + 2).unwrap_or(0);
+    if weight >= 40 && weight <= 150 {
+        p.weight = weight;
+    }
+
     // ============ Reputation ============
     p.home_reputation = memory::read_u16(handle, player_ptr + PLAYER_HOME_REP_OFFSET).unwrap_or(0);
     p.current_reputation = memory::read_u16(handle, player_ptr + PLAYER_CUR_REP_OFFSET).unwrap_or(0);
@@ -316,6 +322,7 @@ pub fn parse_player_at(handle: HANDLE, player_ptr: usize, game_year: u16) -> Opt
         if pos_data.len() == 15 {
             p.positions = PositionMap {
                 goalkeeper: pos_data[0],
+                sweeper: pos_data[1],
                 defender_left: pos_data[2],
                 defender_central: pos_data[3],
                 defender_right: pos_data[4],
@@ -356,6 +363,7 @@ pub fn parse_player_at(handle: HANDLE, player_ptr: usize, game_year: u16) -> Opt
                 technique:   display_attr(raw[23]),
                 corners:     display_attr(raw[27]),
                 free_kick:   display_attr(raw[35]),
+                long_throws: display_attr(raw[30]),
             };
 
             p.mental = MentalAttributes {
@@ -421,6 +429,8 @@ pub fn parse_player_at(handle: HANDLE, player_ptr: usize, game_year: u16) -> Opt
 
             // Preferred foot from attribute indexes 24 (Left) and 25 (Right)
             p.preferred_foot = preferred_foot_label(raw[24], raw[25]).to_string();
+            p.left_foot = display_attr(raw[24]);
+            p.right_foot = display_attr(raw[25]);
         }
     }
 

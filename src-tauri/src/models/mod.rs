@@ -34,6 +34,11 @@ pub struct Player {
     pub condition: u16,
     pub form: f32,
     pub fitness: f32,
+    pub weight: u16,
+    pub left_foot: u8,
+    pub right_foot: u8,
+    pub international_caps: u16,
+    pub international_goals: u16,
     pub technical: TechnicalAttributes,
     pub mental: MentalAttributes,
     pub physical: PhysicalAttributes,
@@ -68,6 +73,7 @@ pub struct TechnicalAttributes {
     pub free_kick: u8,
     pub heading: u8,
     pub long_shots: u8,
+    pub long_throws: u8,
     pub marking: u8,
     pub passing: u8,
     pub penalty: u8,
@@ -141,6 +147,7 @@ pub struct GoalkeepingAttributes {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct PositionMap {
     pub goalkeeper: u8,
+    pub sweeper: u8,
     pub defender_central: u8,
     pub defender_left: u8,
     pub defender_right: u8,
@@ -160,6 +167,7 @@ impl PositionMap {
     pub fn best_position(&self) -> &str {
         let positions = [
             (self.goalkeeper, "GK"),
+            (self.sweeper, "SW"),
             (self.defender_central, "DC"),
             (self.defender_left, "DL"),
             (self.defender_right, "DR"),

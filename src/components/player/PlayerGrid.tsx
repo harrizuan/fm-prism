@@ -10,7 +10,7 @@ import {
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useAppStore } from "@/stores/useAppStore";
 import type { Player } from "@/types/player";
-import { displayName, attrColor, formatValue, formatWage, calculateFeasibility, bestFormationFit, playerAthletics, playerHiddenMentals, feasibilityColor, feasibilityScoreColor, developmentTrajectory, bigGameRating, injuryRiskIndex, pressingIntensity, consistencyIndex, valueEfficiency, leadershipScore } from "@/types/player";
+import { displayName, attrColor, formatValue, formatWage, calculateFeasibility, bestFormationFit, playerAthletics, playerHiddenMentals, feasibilityColor, feasibilityScoreColor, developmentTrajectory, bigGameRating, injuryRiskIndex, pressingIntensity, consistencyIndex, valueEfficiency, leadershipScore, gsBestRating } from "@/types/player";
 import { ArrowUp, ArrowDown, Star, StarOff } from "lucide-react";
 
 function AttrCell({ value }: { value: number }) {
@@ -88,6 +88,11 @@ const allColumns: ColumnDef<Player, any>[] = [
   col("wage", "Wage", "finance", 62, "wage", (v) => <span className="text-zinc-400 text-xs">{v > 0 ? formatWage(v as number) : "-"}</span>),
   col("contract", "Contract", "finance", 72, "contract_expiry", (v) => <span className="text-zinc-500 text-xs">{v ? (v as string).slice(0, 7) : "-"}</span>),
   col("rep", "Rep", "ability", 42, "world_reputation", (v) => <span className="text-zinc-400 text-xs tabular-nums">{v > 0 ? v : "-"}</span>),
+  col("gsRating", "GS%", "ability", 48, (p: Player) => gsBestRating(p).rating, (v) => {
+    const val = v as number;
+    const color = val >= 70 ? "text-green-400" : val >= 55 ? "text-emerald-300" : val >= 40 ? "text-yellow-400" : "text-orange-400";
+    return <span className={`font-mono text-xs tabular-nums font-bold ${color}`}>{val > 0 ? val.toFixed(1) : "-"}</span>;
+  }),
   // Technical
   col("cor", "Cor", "technical", 34, "technical.corners", attrCellFn),
   col("cro", "Cro", "technical", 34, "technical.crossing", attrCellFn),
@@ -97,6 +102,7 @@ const allColumns: ColumnDef<Player, any>[] = [
   col("fk", "FK", "technical", 34, "technical.free_kick", attrCellFn),
   col("hea", "Hea", "technical", 34, "technical.heading", attrCellFn),
   col("ls", "LS", "technical", 34, "technical.long_shots", attrCellFn),
+  col("lth", "LTh", "technical", 34, "technical.long_throws", attrCellFn),
   col("mar", "Mar", "technical", 34, "technical.marking", attrCellFn),
   col("pas", "Pas", "technical", 34, "technical.passing", attrCellFn),
   col("pen", "Pen", "technical", 34, "technical.penalty", attrCellFn),

@@ -27,6 +27,11 @@ export interface Player {
   morale: number;
   happiness: number;
   height: number;
+  weight: number;
+  left_foot: number;
+  right_foot: number;
+  international_caps: number;
+  international_goals: number;
   squad_number: number;
   condition: number;
   form: number;
@@ -48,6 +53,7 @@ export interface TechnicalAttributes {
   free_kick: number;
   heading: number;
   long_shots: number;
+  long_throws: number;
   marking: number;
   passing: number;
   penalty: number;
@@ -116,6 +122,7 @@ export interface GoalkeepingAttributes {
 
 export interface PositionMap {
   goalkeeper: number;
+  sweeper: number;
   defender_central: number;
   defender_left: number;
   defender_right: number;
@@ -1345,4 +1352,304 @@ export function facilityLabel(value: number): string {
   if (value >= 6)  return "Average";
   if (value >= 3)  return "Basic";
   return "Poor";
+}
+
+// ═══════════════════════════════════════════════════════════════
+// GS-STYLE POSITION RATING ENGINE
+// ═══════════════════════════════════════════════════════════════
+// Replicates Genie Scout's position rating calculation.
+//
+// GS FORMULA (confirmed via web research + FM-Scout / FM-Arena):
+//   General_Rating = Σ(attr_value × weight) / (20 × Σ|weight|) × 100
+//   Positional_Rating = General_Rating × (1 − (20 − pos_familiarity) / 46)
+//
+// Position familiarity penalty ≈ 2.17% per point below 20.
+// At familiarity 20: no penalty. At 15: −10.9%. At 0: −43.5%.
+//
+// Weights sourced from GS creator Eugene's defaults:
+//   Tieba Baidu (2017): https://tieba.baidu.com/p/5331200395
+//   FM-Scout "Definitive Guide to CA": ratings file documentation
+//   FM-Arena position filter threads + Mark's adjustment formula
+//
+// GS splits into 11 position groups:
+//   GK, SW (BPD), DC, DLR (FB), DLR_ATT (Att FB), DM, MC, AMC, MLR (Winger), FS, TS
+// ═══════════════════════════════════════════════════════════════
+
+/** Attribute getter function type - extracts a display-value (1-20) from a Player */
+type AttrGetter = (p: Player) => number;
+
+/** Weight entry: attribute getter + weight value */
+interface WeightEntry {
+  get: AttrGetter;
+  w: number;
+}
+
+/** GS position group definition */
+export interface GSPositionGroup {
+  id: string;
+  label: string;
+  weights: WeightEntry[];
+  posKey: keyof PositionMap;
+}
+
+// Attribute getters (display values 1-20)
+const A = {
+  // Technical
+  corners:     (p: Player) => p.technical.corners,
+  crossing:    (p: Player) => p.technical.crossing,
+  dribbling:   (p: Player) => p.technical.dribbling,
+  finishing:   (p: Player) => p.technical.finishing,
+  first_touch: (p: Player) => p.technical.first_touch,
+  free_kick:   (p: Player) => p.technical.free_kick,
+  heading:     (p: Player) => p.technical.heading,
+  long_shots:  (p: Player) => p.technical.long_shots,
+  long_throws: (p: Player) => p.technical.long_throws,
+  marking:     (p: Player) => p.technical.marking,
+  passing:     (p: Player) => p.technical.passing,
+  penalty:     (p: Player) => p.technical.penalty,
+  tackling:    (p: Player) => p.technical.tackling,
+  technique:   (p: Player) => p.technical.technique,
+  // Mental
+  aggression:    (p: Player) => p.mental.aggression,
+  anticipation:  (p: Player) => p.mental.anticipation,
+  bravery:       (p: Player) => p.mental.bravery,
+  composure:     (p: Player) => p.mental.composure,
+  concentration: (p: Player) => p.mental.concentration,
+  decisions:     (p: Player) => p.mental.decisions,
+  determination: (p: Player) => p.mental.determination,
+  flair:         (p: Player) => p.mental.flair,
+  leadership:    (p: Player) => p.mental.leadership,
+  off_the_ball:  (p: Player) => p.mental.off_the_ball,
+  positioning:   (p: Player) => p.mental.positioning,
+  teamwork:      (p: Player) => p.mental.teamwork,
+  vision:        (p: Player) => p.mental.vision,
+  work_rate:     (p: Player) => p.mental.work_rate,
+  // Physical
+  acceleration:    (p: Player) => p.physical.acceleration,
+  agility:         (p: Player) => p.physical.agility,
+  balance:         (p: Player) => p.physical.balance,
+  jumping:         (p: Player) => p.physical.jumping,
+  natural_fitness: (p: Player) => p.physical.natural_fitness,
+  pace:            (p: Player) => p.physical.pace,
+  stamina:         (p: Player) => p.physical.stamina,
+  strength:        (p: Player) => p.physical.strength,
+  // Goalkeeping
+  handling:        (p: Player) => p.goalkeeping.handling,
+  aerial_reach:    (p: Player) => p.goalkeeping.aerial_reach,
+  command_of_area: (p: Player) => p.goalkeeping.command_of_area,
+  communication:   (p: Player) => p.goalkeeping.communication,
+  kicking:         (p: Player) => p.goalkeeping.kicking,
+  throwing:        (p: Player) => p.goalkeeping.throwing,
+  one_on_ones:     (p: Player) => p.goalkeeping.one_on_ones,
+  reflexes:        (p: Player) => p.goalkeeping.reflexes,
+  eccentricity:    (p: Player) => p.goalkeeping.eccentricity,
+  rushing_out:     (p: Player) => p.goalkeeping.rushing_out,
+  punching:        (p: Player) => p.goalkeeping.punching,
+};
+
+function w(get: AttrGetter, weight: number): WeightEntry { return { get, w: weight }; }
+
+/**
+ * GS Position Groups — 11 groups with attribute weights.
+ * Weights from Eugene's defaults (GS creator), cross-referenced with
+ * FM-Scout CA guide ratings file and Chinese community translations.
+ */
+export const GS_POSITION_GROUPS: GSPositionGroup[] = [
+  {
+    id: "GK", label: "Goalkeeper", posKey: "goalkeeper",
+    weights: [
+      w(A.reflexes, 100), w(A.handling, 100), w(A.command_of_area, 80),
+      w(A.positioning, 80), w(A.communication, 60), w(A.one_on_ones, 50),
+      w(A.first_touch, 40), w(A.anticipation, 40), w(A.jumping, 40),
+      w(A.agility, 35), w(A.throwing, 30), w(A.kicking, 30),
+      w(A.composure, 30), w(A.passing, 30), w(A.concentration, 20),
+      w(A.decisions, 20), w(A.rushing_out, 20), w(A.acceleration, 15),
+      w(A.eccentricity, -10),
+    ],
+  },
+  {
+    id: "SW", label: "Sweeper (BPD)", posKey: "sweeper",
+    weights: [
+      w(A.jumping, 100), w(A.heading, 100), w(A.marking, 100),
+      w(A.tackling, 100), w(A.positioning, 100), w(A.anticipation, 80),
+      w(A.concentration, 80), w(A.decisions, 80), w(A.balance, 80),
+      w(A.acceleration, 65), w(A.strength, 60), w(A.composure, 60),
+      w(A.passing, 40), w(A.bravery, 40), w(A.determination, 40),
+      w(A.teamwork, 40), w(A.agility, 40), w(A.dribbling, 20),
+      w(A.vision, 20), w(A.stamina, 20), w(A.pace, 15),
+      w(A.long_shots, 10), w(A.flair, 10),
+    ],
+  },
+  {
+    id: "DC", label: "Central Defender", posKey: "defender_central",
+    weights: [
+      w(A.jumping, 100), w(A.heading, 100), w(A.tackling, 100),
+      w(A.positioning, 70), w(A.marking, 60), w(A.decisions, 60),
+      w(A.determination, 60), w(A.strength, 50), w(A.anticipation, 40),
+      w(A.concentration, 40), w(A.aggression, 30), w(A.acceleration, 25),
+      w(A.passing, 20), w(A.composure, 15), w(A.vision, 15),
+      w(A.first_touch, 10), w(A.technique, 10),
+    ],
+  },
+  {
+    id: "DLR", label: "Full Back", posKey: "defender_left",
+    weights: [
+      w(A.tackling, 100), w(A.positioning, 95), w(A.teamwork, 90),
+      w(A.stamina, 90), w(A.marking, 85), w(A.work_rate, 85),
+      w(A.decisions, 65), w(A.acceleration, 65), w(A.concentration, 60),
+      w(A.crossing, 50), w(A.passing, 50), w(A.dribbling, 45),
+      w(A.anticipation, 45), w(A.pace, 40), w(A.off_the_ball, 35),
+      w(A.first_touch, 20), w(A.flair, 15), w(A.technique, 10),
+      w(A.composure, 10), w(A.determination, 10), w(A.agility, 10),
+      w(A.balance, 10), w(A.strength, 10),
+    ],
+  },
+  {
+    id: "DLR_ATT", label: "Attacking Full Back", posKey: "defender_left",
+    weights: [
+      w(A.tackling, 100), w(A.positioning, 100), w(A.work_rate, 100),
+      w(A.stamina, 100), w(A.teamwork, 85), w(A.decisions, 80),
+      w(A.marking, 80), w(A.passing, 80), w(A.acceleration, 75),
+      w(A.dribbling, 65), w(A.pace, 60), w(A.crossing, 55),
+      w(A.off_the_ball, 50), w(A.concentration, 50), w(A.first_touch, 30),
+      w(A.anticipation, 30), w(A.flair, 20), w(A.technique, 15),
+      w(A.composure, 15), w(A.determination, 15), w(A.agility, 15),
+      w(A.balance, 15),
+    ],
+  },
+  {
+    id: "DM", label: "Defensive Midfielder", posKey: "defensive_midfielder",
+    weights: [
+      w(A.positioning, 100), w(A.passing, 100), w(A.tackling, 85),
+      w(A.composure, 85), w(A.decisions, 85), w(A.teamwork, 85),
+      w(A.stamina, 85), w(A.first_touch, 75), w(A.technique, 75),
+      w(A.work_rate, 75), w(A.strength, 70), w(A.concentration, 70),
+      w(A.determination, 70), w(A.aggression, 55), w(A.anticipation, 55),
+      w(A.acceleration, 55), w(A.marking, 50), w(A.off_the_ball, 40),
+      w(A.balance, 40), w(A.bravery, 30), w(A.dribbling, 15),
+      w(A.heading, 15), w(A.long_shots, 15), w(A.pace, 15),
+      w(A.agility, 10), w(A.natural_fitness, 10), w(A.finishing, 5),
+    ],
+  },
+  {
+    id: "MC", label: "Midfielder", posKey: "midfielder_central",
+    weights: [
+      w(A.passing, 100), w(A.first_touch, 90), w(A.decisions, 85),
+      w(A.teamwork, 75), w(A.vision, 60), w(A.determination, 60),
+      w(A.work_rate, 60), w(A.stamina, 60), w(A.off_the_ball, 55),
+      w(A.composure, 55), w(A.tackling, 50), w(A.technique, 50),
+      w(A.positioning, 45), w(A.concentration, 35), w(A.acceleration, 35),
+      w(A.strength, 30), w(A.bravery, 25), w(A.marking, 25),
+      w(A.long_shots, 20), w(A.dribbling, 20), w(A.aggression, 20),
+      w(A.anticipation, 20), w(A.balance, 20), w(A.finishing, 15),
+      w(A.flair, 10), w(A.natural_fitness, 10), w(A.heading, 5),
+    ],
+  },
+  {
+    id: "AMC", label: "Attacking Midfielder", posKey: "attacking_midfielder",
+    weights: [
+      w(A.decisions, 100), w(A.passing, 100), w(A.technique, 100),
+      w(A.vision, 95), w(A.first_touch, 85), w(A.composure, 85),
+      w(A.off_the_ball, 75), w(A.anticipation, 65), w(A.acceleration, 58),
+      w(A.flair, 30), w(A.teamwork, 30), w(A.finishing, 30),
+      w(A.dribbling, 20), w(A.long_shots, 20), w(A.agility, 20),
+      w(A.stamina, 20), w(A.work_rate, 15), w(A.pace, 15),
+      w(A.aggression, 10), w(A.positioning, 10), w(A.strength, 10),
+    ],
+  },
+  {
+    id: "MLR", label: "Winger", posKey: "winger_left",
+    weights: [
+      w(A.decisions, 100), w(A.passing, 100), w(A.technique, 95),
+      w(A.first_touch, 85), w(A.teamwork, 85), w(A.work_rate, 85),
+      w(A.acceleration, 85), w(A.crossing, 80), w(A.pace, 75),
+      w(A.dribbling, 70), w(A.anticipation, 70), w(A.off_the_ball, 70),
+      w(A.stamina, 65), w(A.composure, 55), w(A.vision, 55),
+      w(A.determination, 50), w(A.positioning, 50), w(A.tackling, 30),
+      w(A.concentration, 30), w(A.flair, 30), w(A.finishing, 20),
+      w(A.balance, 20), w(A.strength, 20), w(A.heading, 15),
+      w(A.agility, 15), w(A.jumping, 15), w(A.long_shots, 10),
+      w(A.marking, 10), w(A.aggression, 10),
+    ],
+  },
+  {
+    id: "FS", label: "Fast Striker", posKey: "striker",
+    weights: [
+      w(A.off_the_ball, 100), w(A.finishing, 100), w(A.first_touch, 100),
+      w(A.anticipation, 85), w(A.composure, 85), w(A.dribbling, 75),
+      w(A.technique, 75), w(A.decisions, 75), w(A.pace, 75),
+      w(A.acceleration, 65), w(A.passing, 60), w(A.vision, 60),
+      w(A.teamwork, 45), w(A.agility, 45), w(A.heading, 35),
+      w(A.strength, 35), w(A.concentration, 20), w(A.determination, 20),
+      w(A.work_rate, 20), w(A.long_shots, 15), w(A.jumping, 15),
+      w(A.flair, 10),
+    ],
+  },
+  {
+    id: "TS", label: "Target Striker", posKey: "striker",
+    weights: [
+      w(A.heading, 100), w(A.jumping, 100), w(A.off_the_ball, 100),
+      w(A.finishing, 100), w(A.strength, 85), w(A.anticipation, 80),
+      w(A.first_touch, 75), w(A.balance, 70), w(A.composure, 65),
+      w(A.decisions, 65), w(A.aggression, 60), w(A.bravery, 55),
+      w(A.technique, 50), w(A.teamwork, 45), w(A.passing, 40),
+      w(A.determination, 40), w(A.pace, 30), w(A.work_rate, 25),
+      w(A.dribbling, 20), w(A.acceleration, 20), w(A.stamina, 15),
+      w(A.concentration, 15),
+    ],
+  },
+];
+
+/**
+ * Calculate GS-style general rating for a player at a position group.
+ * This IGNORES position familiarity (assumes 20/20).
+ * Formula: Σ(attr × weight) / (20 × Σ|weight|) × 100
+ */
+export function gsGeneralRating(p: Player, group: GSPositionGroup): number {
+  let weightedSum = 0;
+  let absWeightSum = 0;
+  for (const entry of group.weights) {
+    const val = entry.get(p);
+    weightedSum += val * entry.w;
+    absWeightSum += Math.abs(entry.w);
+  }
+  if (absWeightSum === 0) return 0;
+  return (weightedSum / (20 * absWeightSum)) * 100;
+}
+
+/**
+ * Calculate GS-style positional rating for a player at a position group.
+ * This INCLUDES the position familiarity penalty.
+ * Formula: general_rating × (1 − (20 − pos_familiarity) / 46)
+ */
+export function gsPositionalRating(p: Player, group: GSPositionGroup): number {
+  const general = gsGeneralRating(p, group);
+  const posFam = p.positions[group.posKey] || 0;
+  const penalty = (20 - posFam) / 46;
+  return general * (1 - penalty);
+}
+
+/**
+ * Calculate all 11 GS position ratings for a player.
+ * Returns sorted array (highest first) of { id, label, general%, positional% }.
+ */
+export function gsAllPositionRatings(p: Player): {
+  id: string; label: string; general: number; positional: number; familiarity: number;
+}[] {
+  return GS_POSITION_GROUPS.map(g => ({
+    id: g.id,
+    label: g.label,
+    general: gsGeneralRating(p, g),
+    positional: gsPositionalRating(p, g),
+    familiarity: p.positions[g.posKey] || 0,
+  })).sort((a, b) => b.positional - a.positional);
+}
+
+/**
+ * Get best GS position rating for a player.
+ */
+export function gsBestRating(p: Player): { id: string; label: string; rating: number } {
+  const all = gsAllPositionRatings(p);
+  if (all.length === 0) return { id: "?", label: "Unknown", rating: 0 };
+  return { id: all[0].id, label: all[0].label, rating: all[0].positional };
 }

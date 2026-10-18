@@ -1,5 +1,5 @@
 import type { Player } from "@/types/player";
-import { displayName, attrColor, formatValue, formatWage, bestRoles, calculateFeasibility, feasibilityColor, feasibilityBg, feasibilityLabel, playerAthletics, playerHiddenMentals, developmentTrajectory, bigGameRating, injuryRiskIndex, pressingIntensity, consistencyIndex, valueEfficiency, leadershipScore } from "@/types/player";
+import { displayName, attrColor, formatValue, formatWage, bestRoles, calculateFeasibility, feasibilityColor, feasibilityBg, feasibilityLabel, playerAthletics, playerHiddenMentals, developmentTrajectory, bigGameRating, injuryRiskIndex, pressingIntensity, consistencyIndex, valueEfficiency, leadershipScore, gsAllPositionRatings } from "@/types/player";
 import { useAppStore } from "@/stores/useAppStore";
 import { X, GitCompare, TrendingUp, Shield, Zap, Brain, Eye, Star, Goal, Award, Target } from "lucide-react";
 import {
@@ -122,6 +122,12 @@ export function PlayerDetail() {
         {/* Extra info */}
         <div className="mt-2 border-t border-zinc-800/50 pt-1.5 space-y-0">
           <InfoRow label="Preferred Foot" value={p.preferred_foot} />
+          {p.left_foot > 0 && <InfoRow label="Left Foot" value={`${p.left_foot}/20`} />}
+          {p.right_foot > 0 && <InfoRow label="Right Foot" value={`${p.right_foot}/20`} />}
+          {p.weight > 0 && <InfoRow label="Weight" value={`${p.weight} kg`} />}
+          {p.height > 0 && <InfoRow label="Height" value={`${p.height} cm`} />}
+          {p.international_caps > 0 && <InfoRow label="Int'l Caps" value={p.international_caps} />}
+          {p.international_goals > 0 && <InfoRow label="Int'l Goals" value={p.international_goals} />}
           <InfoRow label="Contract" value={p.contract_expiry ? p.contract_expiry.slice(0, 7) : ""} />
           <InfoRow label="Transfer" value={p.transfer_status} />
           <InfoRow label="World Rep" value={p.world_reputation > 0 ? p.world_reputation : 0} />
@@ -285,6 +291,28 @@ export function PlayerDetail() {
           })}
         </section>
 
+        {/* GS-Style Position Ratings */}
+        <section>
+          <div className="flex items-center gap-1 mb-1">
+            <Goal size={11} className="text-cyan-400" />
+            <h3 className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider">Position Rating</h3>
+          </div>
+          {gsAllPositionRatings(p).filter(r => r.positional > 20).map((r) => {
+            const pct = Math.min(100, r.positional);
+            const bg = pct >= 70 ? "bg-green-500" : pct >= 55 ? "bg-emerald-500" : pct >= 40 ? "bg-yellow-500" : "bg-orange-500";
+            const famLabel = r.familiarity >= 15 ? "" : r.familiarity >= 10 ? " *" : " **";
+            return (
+              <div key={r.id} className="flex items-center gap-1.5 py-px" title={`General: ${r.general.toFixed(1)}% | Familiarity: ${r.familiarity}/20`}>
+                <span className="text-[10px] text-zinc-400 w-24 truncate">{r.label}{famLabel}</span>
+                <div className="flex-1 h-3.5 bg-zinc-800/80 rounded-sm overflow-hidden relative">
+                  <div className={`h-full rounded-sm ${bg} transition-all`} style={{ width: `${pct}%` }} />
+                  <span className="absolute inset-0 flex items-center justify-center text-[9px] font-bold text-zinc-100">{r.positional.toFixed(1)}%</span>
+                </div>
+              </div>
+            );
+          })}
+        </section>
+
         {/* Technical */}
         <section>
           <div className="flex items-center gap-1 mb-1">
@@ -299,6 +327,7 @@ export function PlayerDetail() {
           <AttributeRow label="Free Kick" value={p.technical.free_kick} />
           <AttributeRow label="Heading" value={p.technical.heading} />
           <AttributeRow label="Long Shots" value={p.technical.long_shots} />
+          <AttributeRow label="Long Throws" value={p.technical.long_throws} />
           <AttributeRow label="Marking" value={p.technical.marking} />
           <AttributeRow label="Passing" value={p.technical.passing} />
           <AttributeRow label="Penalty" value={p.technical.penalty} />
